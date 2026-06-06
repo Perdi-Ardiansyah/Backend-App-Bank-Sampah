@@ -4,12 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Models\Notifikasi;  
+use App\Models\Notifikasi;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-
+use Illuminate\Support\Facades\Storage;
 class AuthController extends Controller
 {
     // ── Login ──────────────────────────────────────────────────────────────
@@ -23,8 +23,8 @@ class AuthController extends Controller
 
         // Cari user by username ATAU email
         $user = User::where('username', $request->username)
-                    ->orWhere('email', $request->username)
-                    ->first();
+            ->orWhere('email', $request->username)
+            ->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json([
@@ -45,7 +45,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user'  => $this->userResponse($user),
+            'user' => $this->userResponse($user),
         ]);
     }
 
@@ -55,42 +55,42 @@ class AuthController extends Controller
     {
         $request->validate([
             'nama_lengkap' => 'required|string|max:255',
-            'username'     => 'required|string|max:50|unique:users|alpha_dash',
-            'email'        => 'required|email|unique:users',
-            'password'     => 'required|string|min:8',
+            'username' => 'required|string|max:50|unique:users|alpha_dash',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|string|min:8',
         ], [
-            'username.unique'     => 'Username sudah digunakan.',
+            'username.unique' => 'Username sudah digunakan.',
             'username.alpha_dash' => 'Username hanya boleh huruf, angka, dan underscore.',
-            'email.unique'        => 'Email sudah terdaftar.',
-            'password.min'        => 'Password minimal 8 karakter.',
+            'email.unique' => 'Email sudah terdaftar.',
+            'password.min' => 'Password minimal 8 karakter.',
         ]);
 
         $user = User::create([
             'nama_lengkap' => $request->nama_lengkap,
-            'username'     => $request->username,
-            'email'        => $request->email,
-            'password'     => $request->password, // auto-hashed by cast
-            'role'         => 'nasabah',
-            'is_verified'  => false,
-            'id_nasabah'   => User::generateIdNasabah(),
+            'username' => $request->username,
+            'email' => $request->email,
+            'password' => $request->password, // auto-hashed by cast
+            'role' => 'nasabah',
+            'is_verified' => false,
+            'id_nasabah' => User::generateIdNasabah(),
         ]);
 
         $admin = \App\Models\User::where('role', 'admin')->first();
-        
+
         // 2. Jika admin ditemukan, kirim notifikasi ke ID Admin tersebut
         if ($admin) {
             \App\Models\Notifikasi::kirim(
-                $admin->id,                                         
+                $admin->id,
                 "{$user->nama_lengkap} mengajukan pendaftaran", // 👈 Sudah dinamis!
                 "Nasabah baru bernama {$user->nama_lengkap} memerlukan verifikasi data segera.",
-                'verifikasi'                                        
+                'verifikasi'
             );
         }
-        
+
 
         return response()->json([
             'message' => 'Pendaftaran berhasil. Tunggu verifikasi admin.',
-            'user'    => $this->userResponse($user),
+            'user' => $this->userResponse($user),
         ], 201);
     }
 
@@ -109,12 +109,12 @@ class AuthController extends Controller
     public function changePassword(Request $request): JsonResponse
     {
         $request->validate([
-            'password_lama'       => 'required|string',
-            'password_baru'       => 'required|string|min:8',
+            'password_lama' => 'required|string',
+            'password_baru' => 'required|string|min:8',
             'konfirmasi_password' => 'required|same:password_baru',
         ], [
             'konfirmasi_password.same' => 'Konfirmasi password tidak cocok.',
-            'password_baru.min'        => 'Password baru minimal 8 karakter.',
+            'password_baru.min' => 'Password baru minimal 8 karakter.',
         ]);
 
         $user = $request->user();
@@ -144,16 +144,71 @@ class AuthController extends Controller
     private function userResponse(User $user): array
     {
         return [
-            'id'           => $user->id,
-            'username'     => $user->username,
+            'id' => $user->id,
+            'username' => $user->username,
             'nama_lengkap' => $user->nama_lengkap,
-            'email'        => $user->email,
-            'role'         => $user->role,
-            'is_verified'  => $user->is_verified,
-            'total_poin'   => $user->total_poin,
-            'no_hp'        => $user->no_hp,
-            'id_nasabah'   => $user->id_nasabah,
-            'foto_profil'  => $user->foto_profil,
+            'email' => $user->email,
+            'role' => $user->role,
+            'is_verified' => $user->is_verified,
+            'total_poin' => $user->total_poin,
+            'no_hp' => $user->no_hp,
+            'id_nasabah' => $user->id_nasabah,
+            'foto_profil' => $user->foto_profil,
         ];
+    }
+
+    public function updateFoto(Request $request)
+    {
+        $request->validate([
+            'foto' => 'required|image|mimes:jpeg,png,jpg|max:2048', // Maksimal 2MB
+        ]);
+
+        $user = auth()->user(); // Ambil user yang sedang login
+
+        if ($request->hasFile('foto')) {
+            if ($user->foto && Storage::disk('public')->exists($user->foto)) {
+                Storage::disk('public')->delete($user->foto);
+            }
+
+            $path = $request->file('foto')->store('profil', 'public');
+
+            // ❌ JANGAN PAKAI INI: $user->update(['foto' => $path]);
+
+            //  GANTI DENGAN CARA INI (Jauh lebih aman dan pasti masuk):
+            $user->foto_profil = $path; // 👈 Pastikan kata 'foto' ini sama dengan nama kolom di database Anda
+            $user->save(); // 👈 Memaksa laravel menyimpan langsung
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Foto profil berhasil diperbarui',
+                'foto_url' => asset('storage/' . $path)
+            ]);
+        }
+
+        return response()->json(['success' => false, 'message' => 'Tidak ada foto yang diunggah'], 400);
+    }
+
+    public function updateProfil(Request $request)
+    {
+        $user = auth()->user();
+
+        // Validasi input data nasabah
+        $request->validate([
+            'nama_lengkap' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+            'no_hp' => 'required|string|max:15|unique:users,no_hp,' . $user->id,
+        ]);
+
+        // Update data di database
+        $user->nama_lengkap = $request->nama_lengkap;
+        $user->email = $request->email;
+        $user->no_hp = $request->no_hp;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profil berhasil diperbarui',
+            'user' => $user
+        ]);
     }
 }

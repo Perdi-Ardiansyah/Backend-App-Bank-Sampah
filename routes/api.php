@@ -6,6 +6,27 @@ use App\Http\Controllers\Api\NasabahController;
 use App\Http\Controllers\Api\KategoriController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\AdminController;
+use App\Services\FcmService;
+use App\Models\User;
+
+Route::get('/test-notif', function () {
+    // Cari user Nasabah Anda (misal ID 2 adalah Andi Saputra)
+    // Sesuaikan ID-nya dengan ID user Anda di database yang sudah punya fcm_token
+    $user = User::find(2); 
+
+    if (!$user || !$user->fcm_token) {
+        return "User tidak ditemukan atau belum punya FCM Token";
+    }
+
+    $sukses = FcmService::sendNotification(
+        $user->fcm_token,
+        'Halo dari Laravel! 🚀', // Judul
+        'Ini adalah bukti bahwa backend sudah bisa menembak notifikasi.', // Isi Pesan
+        ['jenis' => 'tes_koneksi'] // Data tambahan (opsional)
+    );
+
+    return $sukses ? "Notifikasi berhasil ditembakkan!" : "Gagal menembak notifikasi. Cek file log Laravel.";
+});
 
 // ── Public routes (tidak perlu token) ────────────────────────────────────────
 Route::post('/login', [AuthController::class, 'login']);
@@ -35,6 +56,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/notifikasi', [NasabahController::class, 'notifikasi']);
         Route::post('/notifikasi/read-all', [NasabahController::class, 'markAllRead']);
     });
+
+    Route::post('/user/simpan-token-fcm', [AuthController::class, 'simpanTokenFcm']);
 
     // ── Admin routes ──────────────────────────────────────────────────────
     Route::middleware('role:admin')->prefix('admin')->group(function () {

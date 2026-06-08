@@ -70,7 +70,7 @@ class AdminController extends Controller
             $nasabah->tambahPoin($poin);
         });
 
-        // ✅ Push notifikasi ke nasabah
+        // ✅ 1. Push notifikasi internal (ke Database)
         $this->fcm->kirimKeUser(
             user:  $nasabah,
             judul: 'Setoran Berhasil Diverifikasi ✅',
@@ -78,6 +78,16 @@ class AdminController extends Controller
             tipe:  'setoran',
             route: '/riwayat',
         );
+
+        // 🚀 2. TEMBAK PUSH NOTIFIKASI FIREBASE (Ke Layar HP)
+        if ($nasabah->fcm_token) {
+            \App\Services\FcmService::sendNotification(
+                $nasabah->fcm_token,
+                'Setoran Berhasil Diverifikasi ✅',
+                "Setoran {$request->berat_kg}kg {$kategori->nama} berhasil dicatat. Anda mendapat {$poin} poin.",
+                ['jenis' => 'setoran', 'route' => '/riwayat']
+            );
+        }
 
         return response()->json([
             'message'       => 'Setoran berhasil disimpan.',
@@ -89,11 +99,9 @@ class AdminController extends Controller
 
     public function nasabahPending()
     {
-        // Pastikan Anda memanggil kolom-kolom yang akan ditampilkan di Flutter
         $pending = User::where('role', 'nasabah')
             ->where('is_verified', false)
             ->select('id', 'nama_lengkap', 'email', 'created_at') 
-            // ->select('id', 'nama_lengkap', 'email', 'created_at', 'tipe_nasabah', 'lokasi') // <-- Gunakan ini jika di DB Anda ada kolom tipe_nasabah dan lokasi
             ->orderBy('created_at', 'asc')
             ->get();
 
@@ -105,7 +113,7 @@ class AdminController extends Controller
         $nasabah = User::where('role', 'nasabah')->where('is_verified', false)->findOrFail($id);
         $nasabah->update(['is_verified' => true]);
 
-        // ✅ Push notifikasi ke nasabah
+        // ✅ 1. Push notifikasi internal
         $this->fcm->kirimKeUser(
             user:  $nasabah,
             judul: 'Akun Anda Telah Diverifikasi 🎉',
@@ -113,6 +121,16 @@ class AdminController extends Controller
             tipe:  'sistem',
             route: '/home',
         );
+
+        // 🚀 2. TEMBAK PUSH NOTIFIKASI FIREBASE
+        if ($nasabah->fcm_token) {
+            \App\Services\FcmService::sendNotification(
+                $nasabah->fcm_token,
+                'Akun Anda Telah Diverifikasi 🎉',
+                'Selamat! Akun Anda sudah aktif. Silakan mulai menyetorkan sampah.',
+                ['jenis' => 'sistem', 'route' => '/home']
+            );
+        }
 
         return response()->json(['message' => "Nasabah {$nasabah->nama_lengkap} berhasil diaktifkan."]);
     }
@@ -131,7 +149,7 @@ class AdminController extends Controller
             'status'       => $p->status,
             'metode_cash'  => $p->metode_cash,
             'no_rekening'  => $p->no_rekening,
-            'catatan'      => $p->catatan, // 👈 INI DIA BARIS YANG HILANG!
+            'catatan'      => $p->catatan,
             'tanggal'      => $p->created_at->format('d M Y, H:i'),
         ]);
 
@@ -150,7 +168,7 @@ class AdminController extends Controller
         $pencairan = Penukaran::where('tipe', 'cash')->where('status', 'pending')->findOrFail($id);
         $pencairan->update(['status' => 'selesai']);
 
-        // ✅ Push notifikasi ke nasabah
+        // ✅ 1. Push notifikasi internal
         $this->fcm->kirimKeUser(
             user:  $pencairan->user,
             judul: 'Pencairan Dana Berhasil 💰',
@@ -158,6 +176,16 @@ class AdminController extends Controller
             tipe:  'penukaran',
             route: '/riwayat',
         );
+
+        // 🚀 2. TEMBAK PUSH NOTIFIKASI FIREBASE
+        if ($pencairan->user->fcm_token) {
+            \App\Services\FcmService::sendNotification(
+                $pencairan->user->fcm_token,
+                'Pencairan Dana Berhasil 💰',
+                'Pencairan Rp ' . number_format($pencairan->jumlah) . ' telah diproses dan dikirim.',
+                ['jenis' => 'penukaran', 'route' => '/riwayat']
+            );
+        }
 
         return response()->json(['message' => 'Pencairan berhasil diselesaikan.']);
     }
@@ -171,7 +199,7 @@ class AdminController extends Controller
             $pencairan->update(['status' => 'dibatalkan']);
         });
 
-        // ✅ Push notifikasi ke nasabah
+        // ✅ 1. Push notifikasi internal
         $this->fcm->kirimKeUser(
             user:  $pencairan->user,
             judul: 'Pencairan Dana Ditolak',
@@ -179,6 +207,16 @@ class AdminController extends Controller
             tipe:  'penukaran',
             route: '/riwayat',
         );
+
+        // 🚀 2. TEMBAK PUSH NOTIFIKASI FIREBASE
+        if ($pencairan->user->fcm_token) {
+            \App\Services\FcmService::sendNotification(
+                $pencairan->user->fcm_token,
+                'Pencairan Dana Ditolak',
+                'Permintaan pencairan Rp ' . number_format($pencairan->jumlah) . ' ditolak. Poin telah dikembalikan.',
+                ['jenis' => 'penukaran', 'route' => '/riwayat']
+            );
+        }
 
         return response()->json(['message' => 'Pencairan ditolak dan poin dikembalikan.']);
     }
@@ -254,7 +292,6 @@ class AdminController extends Controller
 
     public function getNasabahAktif() 
     {
-        // Ambil user dengan role nasabah yang sudah diverifikasi
         $nasabah = User::where('role', 'nasabah')
                        ->where('is_verified', true)
                        ->select('id', 'nama_lengkap as nama', 'id_nasabah')
@@ -267,7 +304,6 @@ class AdminController extends Controller
 
     public function notifikasi(): JsonResponse
     {
-        // Mengambil notifikasi milik user yang sedang login (Admin)
         $notif = Notifikasi::where('user_id', auth()->id())
             ->orderBy('created_at', 'desc')
             ->get();

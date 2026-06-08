@@ -211,4 +211,20 @@ class AuthController extends Controller
             'user' => $user
         ]);
     }
+
+    public function simpanTokenFcm(Request $request)
+    {
+        $request->validate([
+            'fcm_token' => 'required|string',
+        ]);
+
+        $user = auth()->user();
+        $user->fcm_token = $request->fcm_token;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Token FCM berhasil disimpan ke database'
+        ]);
+    }
 }

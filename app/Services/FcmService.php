@@ -2,141 +2,74 @@
 
 namespace App\Services;
 
-use App\Models\User;
-use App\Models\Notifikasi;
-use Kreait\Firebase\Factory;
-use Kreait\Firebase\Messaging\CloudMessage;
-use Kreait\Firebase\Messaging\Notification;
+use Google_Client;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Models\Notifikasi; // 👈 Pastikan Model Notifikasi dipanggil
 
 class FcmService
 {
-    private $messaging;
-
-    public function __construct()
+    // ── Fungsi FCM (Push Notif ke Layar HP) yang tadi kita buat ──
+    public static function sendNotification($fcmToken, $title, $body, $data = [])
     {
-        // Path menuju file JSON credential (storage/app/firebase-auth.json)
-        $credentialsPath = storage_path('app/firebase-auth.json');
-        
-        // Cek jika file dari .env digunakan atau langsung hardcoded path
-        if (config('services.firebase.credentials')) {
-            $credentialsPath = base_path(config('services.firebase.credentials'));
-        }
-
         try {
-            // Inisialisasi Firebase Factory dengan file JSON
-            $factory = (new Factory)->withServiceAccount($credentialsPath);
-            $this->messaging = $factory->createMessaging();
+            $keyPath = storage_path('app/firebase-auth.json');
+            
+            if (!file_exists($keyPath)) {
+                Log::error('FCM Error: File firebase-auth.json tidak ditemukan.');
+                return false;
+            }
+
+            $keyData = json_decode(file_get_contents($keyPath), true);
+            $projectId = $keyData['project_id'];
+
+            $client = new Google_Client();
+            $client->setAuthConfig($keyPath);
+            $client->addScope('https://www.googleapis.com/auth/firebase.messaging');
+            $client->useApplicationDefaultCredentials();
+            $token = $client->fetchAccessTokenWithAssertion();
+            $accessToken = $token['access_token'];
+
+            $payload = [
+                'message' => [
+                    'token' => $fcmToken,
+                    'notification' => [
+                        'title' => $title,
+                        'body' => $body,
+                    ],
+                    'data' => $data,
+                ]
+            ];
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Content-Type' => 'application/json',
+            ])->post("https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send", $payload);
+
+            return $response->successful();
+
         } catch (\Exception $e) {
-            Log::error('Firebase init error: ' . $e->getMessage());
-        }
-    }
-
-    // ── Kirim ke satu user ─────────────────────────────────────────────────
-
-    /**
-     * Kirim notifikasi push ke satu nasabah.
-     * Otomatis simpan ke tabel notifikasi.
-     */
-    public function kirimKeUser(
-        User   $user,
-        string $judul,
-        string $pesan,
-        string $tipe  = 'sistem',
-        string $route = '/home',
-        array  $data  = []
-    ): bool {
-        // Simpan ke database dulu
-        Notifikasi::kirim($user->id, $judul, $pesan, $tipe);
-
-        // Kirim push notification jika user punya FCM token
-        if (empty($user->fcm_token) || !$this->messaging) {
+            Log::error('FCM Send Error: ' . $e->getMessage());
             return false;
         }
-
-        return $this->send(
-            token:  $user->fcm_token,
-            judul:  $judul,
-            pesan:  $pesan,
-            data:   array_merge(['route' => $route], $data),
-        );
     }
 
-    // ── Kirim ke banyak user ───────────────────────────────────────────────
-
-    /**
-     * Kirim notifikasi push ke semua nasabah aktif (broadcast).
-     */
-    public function broadcast(
-        string $judul,
-        string $pesan,
-        string $tipe  = 'sistem',
-        string $route = '/home'
-    ): void {
-        $users = User::where('role', 'nasabah')
-                     ->where('is_verified', true)
-                     ->whereNotNull('fcm_token')
-                     ->select('id', 'fcm_token')
-                     ->get();
-
-        // Simpan notifikasi ke DB untuk semua user
-        $users->each(fn($u) => Notifikasi::kirim($u->id, $judul, $pesan, $tipe));
-
-        if (!$this->messaging) return;
-
-        // Kirim FCM dalam batch (maks 500 token per request)
-        $tokens = $users->pluck('fcm_token')->filter()->values()->toArray();
-        $chunks = array_chunk($tokens, 500);
-
-        foreach ($chunks as $chunk) {
-            $this->sendMulticast(
-                tokens: $chunk,
-                judul:  $judul,
-                pesan:  $pesan,
-                data:   ['route' => $route],
-            );
-        }
-    }
-
-    // ── Core HTTP methods ──────────────────────────────────────────────────
-
-    /** Kirim ke satu token */
-    private function send(
-        string $token,
-        string $judul,
-        string $pesan,
-        array  $data = []
-    ): bool {
+    // ── INI FUNGSI YANG HILANG (Untuk simpan notif ke Database) ──
+    public function kirimKeUser($user, $judul, $pesan, $tipe = 'sistem', $route = '/')
+    {
         try {
-            $message = CloudMessage::withTarget('token', $token)
-                ->withNotification(Notification::create($judul, $pesan))
-                ->withData($data);
-
-            $this->messaging->send($message);
+            Notifikasi::create([
+                'user_id' => $user->id,
+                'judul'   => $judul,
+                'pesan'   => $pesan,
+                'tipe'    => $tipe,
+                'route'   => $route,
+                'is_read' => false,
+            ]);
             return true;
         } catch (\Exception $e) {
-            Log::error('FCM send gagal: ' . $e->getMessage(), [
-                'token' => substr($token, 0, 20) . '...'
-            ]);
+            Log::error('Gagal menyimpan notifikasi ke DB: ' . $e->getMessage());
             return false;
-        }
-    }
-
-    /** Kirim ke banyak token sekaligus */
-    private function sendMulticast(
-        array  $tokens,
-        string $judul,
-        string $pesan,
-        array  $data = []
-    ): void {
-        try {
-            $message = CloudMessage::new()
-                ->withNotification(Notification::create($judul, $pesan))
-                ->withData($data);
-
-            $this->messaging->sendMulticast($message, $tokens);
-        } catch (\Exception $e) {
-            Log::error('FCM multicast exception: ' . $e->getMessage());
         }
     }
 }

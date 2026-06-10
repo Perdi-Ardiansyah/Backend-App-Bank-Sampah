@@ -6,11 +6,19 @@ use App\Http\Controllers\Api\NasabahController;
 use App\Http\Controllers\Api\KategoriController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\admin\DashboardAdminController;
+use App\Http\Controllers\Api\admin\SetoranAdminController;
+use App\Http\Controllers\Api\admin\VerifikasiNasabahAdminController;
+use App\Http\Controllers\Api\admin\PencairanAdminController;
+use App\Http\Controllers\Api\admin\LaporanAdminController;
+use App\Http\Controllers\Api\admin\LogAktivitasAdminController;
+use App\Http\Controllers\Api\admin\NotifikasiAdminController;
 use App\Services\FcmService;
 use App\Models\User;
 
 
 // ── Public routes (tidak perlu token) ────────────────────────────────────────
+
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/kirim-otp', [AuthController::class, 'kirimOtp']);
@@ -48,20 +56,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
 
         // Setoran
-        Route::post('/setoran', [AdminController::class, 'simpanSetoran']);
-        Route::put('/setoran/{id}/status', [AdminController::class, 'updateStatusSetoran']);
+        Route::post('/setoran', [SetoranAdminController::class, 'simpan']);
+        Route::put('/setoran/{id}/status', [SetoranAdminController::class, 'updateStatus']);
 
         // Verifikasi nasabah
-        Route::get('/nasabah-pending', [AdminController::class, 'nasabahPending']);
-        Route::post('/nasabah/{id}/aktifkan', [AdminController::class, 'aktifkanNasabah']);
+        Route::get('/nasabah-pending', [VerifikasiNasabahAdminController::class, 'pending']);
+        Route::post('/nasabah/{id}/aktifkan', [VerifikasiNasabahAdminController::class, 'aktifkan']);
 
         // DAFTAR NASABAH AKTIF (Untuk Autocomplete Form Setoran)
-        Route::get('/nasabah-aktif', [AdminController::class, 'getNasabahAktif']);
+        Route::get('/nasabah-aktif', [VerifikasiNasabahAdminController::class, 'nasabahAktif']);
 
         // Pencairan
-        Route::get('/pencairan', [AdminController::class, 'listPencairan']);
-        Route::post('/pencairan/{id}/selesai', [AdminController::class, 'selesaikanPencairan']);
-        Route::post('/pencairan/{id}/tolak', [AdminController::class, 'tolakPencairan']);
+        Route::get('/pencairan', [PencairanAdminController::class, 'list']);
+        Route::post('/pencairan/{id}/selesai', [PencairanAdminController::class, 'selesai']);
+        Route::post('/pencairan/{id}/tolak', [PencairanAdminController::class, 'tolak']);
 
         // Kategori CRUD
         Route::post('/kategori', [KategoriController::class, 'store']);
@@ -74,11 +82,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/produk/{id}/toggle', [ProdukController::class, 'toggle']);
 
         // Laporan
-        Route::get('/laporan', [AdminController::class, 'laporan']);
-        Route::get('/log-aktivitas', [AdminController::class, 'logAktivitas']);
+        Route::get('/laporan', [LaporanAdminController::class, 'index']);
+        Route::get('/log-aktivitas', [LogAktivitasAdminController::class, 'index']);
 
-        // Pastikan letaknya di dalam grup middleware auth/admin Anda
-        Route::get('/notifikasi', [AdminController::class, 'notifikasi']);
-        Route::patch('/notifikasi/baca', [AdminController::class, 'tandaiDibaca']);
+        // Notifikasi
+        Route::get('/notifikasi', [NotifikasiAdminController::class, 'index']);
+        Route::patch('/notifikasi/baca', [NotifikasiAdminController::class, 'tandaiDibaca']);
+
     });
 });

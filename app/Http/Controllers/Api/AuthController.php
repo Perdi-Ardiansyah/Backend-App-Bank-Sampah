@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Cache;
+use App\Mail\ResetPasswordOtp;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Notifikasi;
@@ -10,6 +13,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Storage;
+use App\Services\FcmService;
+
 class AuthController extends Controller
 {
     // ── Login ──────────────────────────────────────────────────────────────
@@ -83,6 +88,19 @@ class AuthController extends Controller
                 $admin->id,
                 "{$user->nama_lengkap} mengajukan pendaftaran", // 👈 Sudah dinamis!
                 "Nasabah baru bernama {$user->nama_lengkap} memerlukan verifikasi data segera.",
+                'verifikasi'
+            );
+        }
+
+        $admins = User::where('role', 'admin')->get();
+        $fcm = new FcmService();
+
+        // Tembak notifikasi ke masing-masing admin
+        foreach ($admins as $admin) {
+            $fcm->kirimKeUser(
+                $admin,
+                'Nasabah Baru Butuh Verifikasi',
+                "Ada akun baru atas nama {$request->nama_lengkap} menunggu persetujuan.",
                 'verifikasi'
             );
         }
@@ -226,5 +244,81 @@ class AuthController extends Controller
             'success' => true,
             'message' => 'Token FCM berhasil disimpan ke database'
         ]);
+    }
+
+    public function updateToken(Request $request)
+    {
+        $request->validate(['fcm_token' => 'required']);
+
+        // Simpan token ke user yang sedang login
+        $user = auth()->user();
+        $user->update(['fcm_token' => $request->fcm_token]);
+
+        return response()->json(['message' => 'Token FCM berhasil disimpan.']);
+    }
+
+    public function kirimOtp(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return response()->json(['message' => 'Email tidak terdaftar di sistem kami.'], 404);
+        }
+
+        // Buat 6 digit angka acak
+        $otp = rand(100000, 999999);
+
+        // Simpan ke Cache selama 10 Menit
+        Cache::put('otp_' . $user->email, $otp, now()->addMinutes(10));
+
+        // Kirim Email
+        Mail::to($user->email)->send(new ResetPasswordOtp($otp));
+
+        return response()->json(['message' => 'Kode OTP berhasil dikirim ke email Anda.']);
+    }
+
+    // 2. Fungsi Verifikasi OTP (Hanya untuk mengecek apakah kodenya benar)
+    public function verifikasiOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp'   => 'required|numeric'
+        ]);
+
+        $cachedOtp = Cache::get('otp_' . $request->email);
+
+        if (!$cachedOtp || $cachedOtp != $request->otp) {
+            return response()->json(['message' => 'Kode OTP salah atau sudah kedaluwarsa.'], 400);
+        }
+
+        return response()->json(['message' => 'OTP Valid! Silakan masukkan password baru.']);
+    }
+
+    // 3. Fungsi Simpan Password Baru
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'email'    => 'required|email',
+            'otp'      => 'required|numeric',
+            'password' => 'required|min:8|confirmed' 
+            // 'confirmed' berarti di Flutter harus mengirim parameter 'password_confirmation' juga
+        ]);
+
+        // Cek lagi OTP-nya untuk keamanan ganda sebelum mengubah password
+        $cachedOtp = Cache::get('otp_' . $request->email);
+        if (!$cachedOtp || $cachedOtp != $request->otp) {
+            return response()->json(['message' => 'Sesi reset password tidak valid.'], 400);
+        }
+
+        // Ubah Password
+        $user = User::where('email', $request->email)->first();
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        // Hapus OTP dari memori agar tidak bisa dipakai 2 kali
+        Cache::forget('otp_' . $request->email);
+
+        return response()->json(['message' => 'Password berhasil diubah! Silakan login.']);
     }
 }

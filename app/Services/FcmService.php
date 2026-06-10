@@ -58,6 +58,7 @@ class FcmService
     public function kirimKeUser($user, $judul, $pesan, $tipe = 'sistem', $route = '/')
     {
         try {
+            // 1. Simpan ke Database (Agar muncul di halaman Notifikasi UI Flutter)
             Notifikasi::create([
                 'user_id' => $user->id,
                 'judul'   => $judul,
@@ -66,9 +67,21 @@ class FcmService
                 'route'   => $route,
                 'is_read' => false,
             ]);
+
+            // 2. 🚀 TEMBAK KE HP (Jika user memiliki fcm_token) 🚀
+            if (!empty($user->fcm_token)) {
+                // Panggil fungsi static sendNotification di atasnya
+                self::sendNotification(
+                    $user->fcm_token, 
+                    $judul, 
+                    $pesan, 
+                    ['tipe' => $tipe, 'route' => $route] // Bawa data tambahan kalau diperlukan
+                );
+            }
+
             return true;
         } catch (\Exception $e) {
-            Log::error('Gagal menyimpan notifikasi ke DB: ' . $e->getMessage());
+            Log::error('Gagal menyimpan/mengirim notifikasi: ' . $e->getMessage());
             return false;
         }
     }

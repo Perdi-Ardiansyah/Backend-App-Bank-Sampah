@@ -26,58 +26,70 @@ class AdminController extends Controller
 
     public function dashboard(): JsonResponse
     {
+        // 1. Generate data grafik 7 hari terakhir
+        // 1. Generate data grafik 7 hari terakhir secara otomatis
+        $grafik_mingguan = [];
+        $hariIndo = ['Sun' => 'Min', 'Mon' => 'Sen', 'Tue' => 'Sel', 'Wed' => 'Rab', 'Thu' => 'Kam', 'Fri' => 'Jum', 'Sat' => 'Sab'];
+
+        for ($i = 6; $i >= 0; $i--) {
+            $date = now()->subDays($i);
+
+            // 👇 KEMBALIKAN KODE ASLI INI UNTUK MENGAMBIL DARI DATABASE 👇
+            $total_kg = \App\Models\Setoran::whereDate('created_at', $date->toDateString())
+                ->where('status', 'selesai')
+                ->sum('berat_kg');
+
+            $grafik_mingguan[] = [
+                'day' => $hariIndo[$date->format('D')],
+                'berat' => (float) $total_kg // 👈 Jangan pakai rand() lagi, gunakan $total_kg
+            ];
+        }
+
+        // 2. Kembalikan semua data ke Flutter
         return response()->json([
-            'total_nasabah'       => User::where('role', 'nasabah')->where('is_verified', true)->count(),
-            'nasabah_hari_ini'    => User::where('role', 'nasabah')->whereDate('created_at', today())->count(),
-            'total_poin_beredar'  => User::where('role', 'nasabah')->sum('total_poin'),
-            'menunggu_verifikasi' => User::where('role', 'nasabah')->where('is_verified', false)->count(),
-            'total_sampah_kg'     => Setoran::where('status', 'selesai')->sum('berat_kg'),
-            'setoran_hari_ini'    => [
-                'total_kg'        => Setoran::whereDate('created_at', today())->sum('berat_kg'),
-                'total_transaksi' => Setoran::whereDate('created_at', today())->count(),
-                'poin_diberikan'  => Setoran::whereDate('created_at', today())->where('status', 'selesai')->sum('poin_didapat'),
+            'total_nasabah' => \App\Models\User::where('role', 'nasabah')->where('is_verified', true)->count(),
+            'nasabah_hari_ini' => \App\Models\User::where('role', 'nasabah')->whereDate('created_at', today())->count(),
+            'total_poin_beredar' => \App\Models\User::where('role', 'nasabah')->sum('total_poin'),
+            'menunggu_verifikasi' => \App\Models\User::where('role', 'nasabah')->where('is_verified', false)->count(),
+            'total_sampah_kg' => \App\Models\Setoran::where('status', 'selesai')->sum('berat_kg'),
+            'setoran_hari_ini' => [
+                'total_kg' => \App\Models\Setoran::whereDate('created_at', today())->sum('berat_kg'),
+                'total_transaksi' => \App\Models\Setoran::whereDate('created_at', today())->count(),
+                'poin_diberikan' => \App\Models\Setoran::whereDate('created_at', today())->where('status', 'selesai')->sum('poin_didapat'),
             ],
+            // 👇 GRAFIK KITA AMAN DI SINI 👇
+            'grafik_mingguan' => $grafik_mingguan,
         ]);
     }
-
     // ── Simpan Setoran ─────────────────────────────────────────────────────
 
     public function simpanSetoran(Request $request): JsonResponse
     {
         $request->validate([
-            'user_id'     => 'required|exists:users,id',
+            'user_id' => 'required|exists:users,id',
             'kategori_id' => 'required|exists:kategori_sampah,id',
-            'berat_kg'    => 'required|numeric|min:0.1',
-            'lokasi_tps'  => 'nullable|string',
-            'catatan'     => 'nullable|string',
+            'berat_kg' => 'required|numeric|min:0.1',
+            'lokasi_tps' => 'nullable|string',
+            'catatan' => 'nullable|string',
         ]);
 
-        $nasabah  = User::findOrFail($request->user_id);
+        $nasabah = User::findOrFail($request->user_id);
         $kategori = KategoriSampah::findOrFail($request->kategori_id);
-        $poin     = $kategori->hitungPoin($request->berat_kg);
+        $poin = $kategori->hitungPoin($request->berat_kg);
 
         DB::transaction(function () use ($request, $nasabah, $kategori, $poin) {
             Setoran::create([
-                'user_id'      => $nasabah->id,
-                'kategori_id'  => $kategori->id,
-                'admin_id'     => $request->user()->id,
-                'berat_kg'     => $request->berat_kg,
+                'user_id' => $nasabah->id,
+                'kategori_id' => $kategori->id,
+                'admin_id' => $request->user()->id,
+                'berat_kg' => $request->berat_kg,
                 'poin_didapat' => $poin,
-                'status'       => 'selesai',
-                'lokasi_tps'   => $request->lokasi_tps,
-                'catatan'      => $request->catatan,
+                'status' => 'selesai',
+                'lokasi_tps' => $request->lokasi_tps,
+                'catatan' => $request->catatan,
             ]);
             $nasabah->tambahPoin($poin);
         });
-
-        // ✅ 1. Push notifikasi internal (ke Database)
-        $this->fcm->kirimKeUser(
-            user:  $nasabah,
-            judul: 'Setoran Berhasil Diverifikasi ✅',
-            pesan: "Setoran {$request->berat_kg}kg {$kategori->nama} berhasil dicatat. Anda mendapat {$poin} poin.",
-            tipe:  'setoran',
-            route: '/riwayat',
-        );
 
         // 🚀 2. TEMBAK PUSH NOTIFIKASI FIREBASE (Ke Layar HP)
         if ($nasabah->fcm_token) {
@@ -89,9 +101,19 @@ class AdminController extends Controller
             );
         }
 
+        // ... (Kode insert ke tabel setoran selesai) ...
+
+        \App\Models\Notifikasi::create([
+            'user_id' => 1, // ID admin
+            'judul' => 'Setoran Sampah Baru',
+            'pesan' => "Terdapat setoran sampah baru sebesar {$request->berat_kg} Kg. Harap periksa!",
+            'tipe' => 'setoran',
+            'is_read' => false
+        ]);
+
         return response()->json([
-            'message'       => 'Setoran berhasil disimpan.',
-            'poin_diberikan'=> $poin,
+            'message' => 'Setoran berhasil disimpan.',
+            'poin_diberikan' => $poin,
         ], 201);
     }
 
@@ -101,7 +123,7 @@ class AdminController extends Controller
     {
         $pending = User::where('role', 'nasabah')
             ->where('is_verified', false)
-            ->select('id', 'nama_lengkap', 'email', 'created_at') 
+            ->select('id', 'nama_lengkap', 'email', 'created_at')
             ->orderBy('created_at', 'asc')
             ->get();
 
@@ -115,10 +137,10 @@ class AdminController extends Controller
 
         // ✅ 1. Push notifikasi internal
         $this->fcm->kirimKeUser(
-            user:  $nasabah,
+            user: $nasabah,
             judul: 'Akun Anda Telah Diverifikasi 🎉',
             pesan: 'Selamat! Akun Anda sudah aktif. Silakan mulai menyetorkan sampah.',
-            tipe:  'sistem',
+            tipe: 'sistem',
             route: '/home',
         );
 
@@ -137,29 +159,29 @@ class AdminController extends Controller
 
     // ── Pencairan ──────────────────────────────────────────────────────────
 
-   public function listPencairan(): JsonResponse
+    public function listPencairan(): JsonResponse
     {
         $list = Penukaran::where('tipe', 'cash')->with('user')->latest()->paginate(10);
 
         $data = collect($list->items())->map(fn($p) => [
-            'id'           => $p->id,
+            'id' => $p->id,
             'nama_nasabah' => $p->user->nama_lengkap,
-            'id_nasabah'   => $p->user->id_nasabah,
-            'nominal'      => $p->jumlah,
-            'status'       => $p->status,
-            'metode_cash'  => $p->metode_cash,
-            'no_rekening'  => $p->no_rekening,
-            'catatan'      => $p->catatan,
-            'tanggal'      => $p->created_at->format('d M Y, H:i'),
+            'id_nasabah' => $p->user->id_nasabah,
+            'nominal' => $p->jumlah,
+            'status' => $p->status,
+            'metode_cash' => $p->metode_cash,
+            'no_rekening' => $p->no_rekening,
+            'catatan' => $p->catatan,
+            'tanggal' => $p->created_at->format('d M Y, H:i'),
         ]);
 
         $totalTertunda = Penukaran::where('tipe', 'cash')->where('status', 'pending')->sum('jumlah');
 
         return response()->json([
-            'data'           => $data,
+            'data' => $data,
             'total_tertunda' => $totalTertunda,
-            'current_page'   => $list->currentPage(),
-            'last_page'      => $list->lastPage(),
+            'current_page' => $list->currentPage(),
+            'last_page' => $list->lastPage(),
         ]);
     }
 
@@ -170,10 +192,10 @@ class AdminController extends Controller
 
         // ✅ 1. Push notifikasi internal
         $this->fcm->kirimKeUser(
-            user:  $pencairan->user,
+            user: $pencairan->user,
             judul: 'Pencairan Dana Berhasil 💰',
             pesan: 'Pencairan Rp ' . number_format($pencairan->jumlah) . ' telah diproses dan dikirim.',
-            tipe:  'penukaran',
+            tipe: 'penukaran',
             route: '/riwayat',
         );
 
@@ -201,10 +223,10 @@ class AdminController extends Controller
 
         // ✅ 1. Push notifikasi internal
         $this->fcm->kirimKeUser(
-            user:  $pencairan->user,
+            user: $pencairan->user,
             judul: 'Pencairan Dana Ditolak',
             pesan: 'Permintaan pencairan Rp ' . number_format($pencairan->jumlah) . ' ditolak. Poin telah dikembalikan.',
-            tipe:  'penukaran',
+            tipe: 'penukaran',
             route: '/riwayat',
         );
 
@@ -225,10 +247,10 @@ class AdminController extends Controller
 
     public function laporan(Request $request): JsonResponse
     {
-        $dari   = $request->query('dari',   now()->startOfMonth()->toDateString());
+        $dari = $request->query('dari', now()->startOfMonth()->toDateString());
         $sampai = $request->query('sampai', now()->endOfMonth()->toDateString());
 
-        $setoran   = Setoran::with(['user', 'kategori'])
+        $setoran = Setoran::with(['user', 'kategori'])
             ->whereBetween('created_at', [$dari . ' 00:00:00', $sampai . ' 23:59:59'])
             ->where('status', 'selesai')->latest()->paginate(10);
 
@@ -238,23 +260,23 @@ class AdminController extends Controller
             ->first();
 
         $data = collect($setoran->items())->map(fn($s) => [
-            'id'           => 'TRX-' . str_pad($s->id, 4, '0', STR_PAD_LEFT),
-            'tanggal'      => $s->created_at->format('d M Y, H:i'),
-            'nasabah'      => $s->user->nama_lengkap,
-            'kategori'     => $s->kategori->nama,
-            'berat_kg'     => $s->berat_kg,
+            'id' => 'TRX-' . str_pad($s->id, 4, '0', STR_PAD_LEFT),
+            'tanggal' => $s->created_at->format('d M Y, H:i'),
+            'nasabah' => $s->user->nama_lengkap,
+            'kategori' => $s->kategori->nama,
+            'berat_kg' => $s->berat_kg,
             'poin_didapat' => $s->poin_didapat,
         ]);
 
         return response()->json([
-            'stats'        => [
+            'stats' => [
                 'total_transaksi' => $stats->total_transaksi ?? 0,
-                'volume_kg'       => $stats->volume_kg ?? 0,
-                'nilai_konversi'  => $stats->total_poin ?? 0,
+                'volume_kg' => $stats->volume_kg ?? 0,
+                'nilai_konversi' => $stats->total_poin ?? 0,
             ],
-            'data'         => $data,
+            'data' => $data,
             'current_page' => $setoran->currentPage(),
-            'last_page'    => $setoran->lastPage(),
+            'last_page' => $setoran->lastPage(),
         ]);
     }
 
@@ -266,23 +288,23 @@ class AdminController extends Controller
 
         Setoran::with(['user', 'admin', 'kategori'])->latest()->take(20)->get()
             ->each(fn($s) => $logs->push([
-                'id'      => 'setoran_' . $s->id,
-                'admin'   => $s->admin->nama_lengkap ?? 'System',
-                'aksi'    => "menginput setoran {$s->berat_kg}kg {$s->kategori->nama}",
-                'waktu'   => $s->created_at->format('h:i A'),
+                'id' => 'setoran_' . $s->id,
+                'admin' => $s->admin->nama_lengkap ?? 'System',
+                'aksi' => "menginput setoran {$s->berat_kg}kg {$s->kategori->nama}",
+                'waktu' => $s->created_at->format('h:i A'),
                 'tanggal' => $s->created_at->format('D, M d, Y'),
-                'tipe'    => 'setoran',
+                'tipe' => 'setoran',
             ]));
 
         User::where('role', 'nasabah')->where('is_verified', true)
             ->latest('updated_at')->take(10)->get()
             ->each(fn($u) => $logs->push([
-                'id'      => 'verif_' . $u->id,
-                'admin'   => 'Admin',
-                'aksi'    => "memverifikasi nasabah {$u->nama_lengkap}",
-                'waktu'   => $u->updated_at->format('h:i A'),
+                'id' => 'verif_' . $u->id,
+                'admin' => 'Admin',
+                'aksi' => "memverifikasi nasabah {$u->nama_lengkap}",
+                'waktu' => $u->updated_at->format('h:i A'),
                 'tanggal' => $u->updated_at->format('D, M d, Y'),
-                'tipe'    => 'verifikasi',
+                'tipe' => 'verifikasi',
             ]));
 
         $sorted = $logs->sortByDesc('tanggal')->take(20)->values();
@@ -290,13 +312,13 @@ class AdminController extends Controller
         return response()->json(['data' => $sorted, 'total' => $sorted->count()]);
     }
 
-    public function getNasabahAktif() 
+    public function getNasabahAktif()
     {
         $nasabah = User::where('role', 'nasabah')
-                       ->where('is_verified', true)
-                       ->select('id', 'nama_lengkap as nama', 'id_nasabah')
-                       ->get();
-                       
+            ->where('is_verified', true)
+            ->select('id', 'nama_lengkap as nama', 'id_nasabah')
+            ->get();
+
         return response()->json($nasabah);
     }
 
@@ -305,12 +327,13 @@ class AdminController extends Controller
     public function notifikasi(): JsonResponse
     {
         $notif = Notifikasi::where('user_id', auth()->id())
+            ->where('tipe', '!=', 'sistem') // 👈 INI PELATUK PENYARINGNYA
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // Biarkan format balasannya seperti ini agar Flutter Anda tidak error
         return response()->json($notif);
     }
-
     public function tandaiDibaca(): JsonResponse
     {
         Notifikasi::where('user_id', auth()->id())

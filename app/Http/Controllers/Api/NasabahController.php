@@ -11,6 +11,7 @@ use App\Services\FcmService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use App\Models\User;
 
 class NasabahController extends Controller
 {
@@ -32,18 +33,18 @@ class NasabahController extends Controller
         $setoran = Setoran::where('user_id', $user->id)
             ->with('kategori')->latest()->take(3)->get()
             ->map(fn($s) => [
-                'tipe'  => 'setoran',
+                'tipe' => 'setoran',
                 'judul' => $s->kategori->nama ?? '-',
-                'poin'  => '+' . number_format($s->poin_didapat, 0, ',', '.'),
+                'poin' => '+' . number_format($s->poin_didapat, 0, ',', '.'),
                 'waktu' => $s->created_at->diffForHumans(),
             ]);
 
         $penukaran = Penukaran::where('user_id', $user->id)
             ->with('produk')->latest()->take(3)->get()
             ->map(fn($p) => [
-                'tipe'  => 'penukaran',
+                'tipe' => 'penukaran',
                 'judul' => $p->produk->nama ?? 'Pencairan Dana',
-                'poin'  => '-' . number_format($p->total_poin, 0, ',', '.'),
+                'poin' => '-' . number_format($p->total_poin, 0, ',', '.'),
                 'waktu' => $p->created_at->diffForHumans(),
             ]);
 
@@ -60,8 +61,8 @@ class NasabahController extends Controller
 
         // 3. Masukkan ke dalam response JSON
         return response()->json([
-            'total_poin'         => $user->total_poin,
-            'nilai_rupiah'       => $nilaiRupiah,
+            'total_poin' => $user->total_poin,
+            'nilai_rupiah' => $nilaiRupiah,
             'unread_notif_count' => $unreadCount,
             'transaksi_terakhir' => $transaksiTerakhir,
         ]);
@@ -71,7 +72,7 @@ class NasabahController extends Controller
 
     public function riwayatSetoran(Request $request): JsonResponse
     {
-        $user  = $request->user();
+        $user = $request->user();
         $bulan = $request->query('bulan', now()->month);
         $tahun = $request->query('tahun', now()->year);
 
@@ -88,24 +89,24 @@ class NasabahController extends Controller
             ->sum('poin_didapat');
 
         $data = collect($paginated->items())->map(fn($s) => [
-            'id'            => $s->id,
+            'id' => $s->id,
             'kategori_nama' => $s->kategori->nama ?? '-',
             'kategori_icon' => $s->kategori->icon_name ?? 'recycling',
-            'berat_kg'      => $s->berat_kg,
-            'poin_didapat'  => $s->poin_didapat,
-            'status'        => $s->status,
-            'lokasi_tps'    => $s->lokasi_tps,
-            'catatan'       => $s->catatan,
-            'tanggal'       => $s->created_at->toIso8601String(),
+            'berat_kg' => $s->berat_kg,
+            'poin_didapat' => $s->poin_didapat,
+            'status' => $s->status,
+            'lokasi_tps' => $s->lokasi_tps,
+            'catatan' => $s->catatan,
+            'tanggal' => $s->created_at->toIso8601String(),
         ]);
 
         return response()->json([
-            'data'           => $data,
-            'total_poin'     => $user->total_poin,
+            'data' => $data,
+            'total_poin' => $user->total_poin,
             'poin_bulan_ini' => $poinBulanIni,
-            'current_page'   => $paginated->currentPage(),
-            'last_page'      => $paginated->lastPage(),
-            'total'          => $paginated->total(),
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'total' => $paginated->total(),
         ]);
     }
 
@@ -113,7 +114,7 @@ class NasabahController extends Controller
 
     public function riwayatPenukaran(Request $request): JsonResponse
     {
-        $user  = $request->user();
+        $user = $request->user();
         $bulan = $request->query('bulan', now()->month);
         $tahun = $request->query('tahun', now()->year);
 
@@ -124,19 +125,19 @@ class NasabahController extends Controller
             ->latest()->paginate(10);
 
         $data = collect($paginated->items())->map(fn($p) => [
-            'id'          => $p->id,
+            'id' => $p->id,
             'produk_nama' => $p->produk->nama ?? 'Pencairan Dana',
-            'jumlah'      => $p->jumlah,
-            'total_poin'  => $p->total_poin,
-            'status'      => $p->status,
-            'tipe'        => $p->tipe,
-            'tanggal'     => $p->created_at->toIso8601String(),
+            'jumlah' => $p->jumlah,
+            'total_poin' => $p->total_poin,
+            'status' => $p->status,
+            'tipe' => $p->tipe,
+            'tanggal' => $p->created_at->toIso8601String(),
         ]);
 
         return response()->json([
-            'data'         => $data,
+            'data' => $data,
             'current_page' => $paginated->currentPage(),
-            'last_page'    => $paginated->lastPage(),
+            'last_page' => $paginated->lastPage(),
         ]);
     }
 
@@ -146,10 +147,10 @@ class NasabahController extends Controller
     {
         $request->validate([
             'produk_id' => 'required|exists:produk,id',
-            'jumlah'    => 'required|integer|min:1',
+            'jumlah' => 'required|integer|min:1',
         ]);
 
-        $user   = $request->user();
+        $user = $request->user();
         $produk = Produk::findOrFail($request->produk_id);
         $jumlah = $request->jumlah;
 
@@ -174,27 +175,45 @@ class NasabahController extends Controller
             $user->kurangiPoin($totalPoin);
             $produk->kurangiStok($jumlah);
             Penukaran::create([
-                'user_id'    => $user->id,
-                'produk_id'  => $produk->id,
-                'tipe'       => 'produk',
-                'jumlah'     => $jumlah,
+                'user_id' => $user->id,
+                'produk_id' => $produk->id,
+                'tipe' => 'produk',
+                'jumlah' => $jumlah,
                 'total_poin' => $totalPoin,
-                'status'     => 'selesai',
+                'status' => 'selesai',
             ]);
         });
 
         // ✅ Kirim push notification
         $this->fcm->kirimKeUser(
-            user:  $user,
+            user: $user,
             judul: 'Penukaran Berhasil! 🎁',
             pesan: "Penukaran {$jumlah}x {$produk->nama} berhasil. Poin berkurang {$totalPoin}.",
-            tipe:  'penukaran',
+            tipe: 'penukaran',
             route: '/riwayat',
         );
 
+        if ($produk->stok <= 5) {
+            $admins = User::where('role', 'admin')->get();
+            $fcm = new FcmService();
+
+            $pesan = $produk->stok == 0
+                ? "Stok produk '{$produk->nama}' sudah HABIS TOTAL. Segera restock!"
+                : "Stok produk '{$produk->nama}' menipis (sisa {$produk->stok}).";
+
+            foreach ($admins as $admin) {
+                $fcm->kirimKeUser(
+                    $admin,
+                    'Peringatan Stok Produk 📦',
+                    $pesan,
+                    'stok_habis' // Tipe ini akan dibaca oleh Flutter Anda untuk memunculkan warna Merah
+                );
+            }
+        }
+
         return response()->json([
-            'message'    => 'Penukaran berhasil.',
-            'sisa_poin'  => $user->fresh()->total_poin,
+            'message' => 'Penukaran berhasil.',
+            'sisa_poin' => $user->fresh()->total_poin,
         ]);
     }
 
@@ -216,7 +235,7 @@ class NasabahController extends Controller
             'nominal.min' => 'Minimum pencairan Rp ' . number_format($minPencairan),
         ]);
 
-        $user    = $request->user();
+        $user = $request->user();
         $nominal = $request->nominal;
 
         if ($user->total_poin < $nominal) {
@@ -233,28 +252,51 @@ class NasabahController extends Controller
 
         DB::transaction(function () use ($user, $nominal, $keterangan, $request) {
             $user->kurangiPoin($nominal);
-            
+
             Penukaran::create([
-                'user_id'    => $user->id,
-                'tipe'       => 'cash', // 👈 UBAH BARIS INI (Kembalikan ke 'cash')
-                'jumlah'     => $nominal,
+                'user_id' => $user->id,
+                'tipe' => 'cash', // 👈 UBAH BARIS INI (Kembalikan ke 'cash')
+                'jumlah' => $nominal,
                 'total_poin' => $nominal,
-                'status'     => 'pending',
-                'catatan'    => $keterangan, 
+                'status' => 'pending',
+                'catatan' => $keterangan,
             ]);
         });
 
         // ✅ Kirim push notification
         $this->fcm->kirimKeUser(
-            user:  $user,
+            user: $user,
             judul: 'Permintaan Pencairan Dikirim 💰',
             pesan: 'Permintaan pencairan Rp ' . number_format($nominal) . ' sedang diproses admin.',
-            tipe:  'penukaran',
+            tipe: 'penukaran',
             route: '/riwayat',
         );
 
+        \App\Models\Notifikasi::create([
+            'user_id' => 1, // ID admin
+            'judul' => 'Pengajuan Pencairan Poin',
+            'pesan' => "Nasabah ingin mencairkan poin sebesar Rp " . number_format($request->nominal, 0, ',', '.'),
+            'tipe' => 'pencairan',
+            'is_read' => false
+        ]);
+
+        $admins = User::where('role', 'admin')->get();
+        $fcm = new FcmService();
+
+        // Format angka ke rupiah agar rapi
+        $nominalRupiah = number_format($request->nominal, 0, ',', '.');
+
+        foreach ($admins as $admin) {
+            $fcm->kirimKeUser(
+                $admin,
+                'Pengajuan Pencairan Poin 💸',
+                "Nasabah ingin mencairkan poin sebesar Rp {$nominalRupiah}. Segera proses!",
+                'pencairan'
+            );
+        }
+
         return response()->json([
-            'message'   => 'Permintaan pencairan berhasil dikirim.',
+            'message' => 'Permintaan pencairan berhasil dikirim.',
             'sisa_poin' => $user->fresh()->total_poin,
         ]);
     }
@@ -263,15 +305,15 @@ class NasabahController extends Controller
 
     public function notifikasi(Request $request): JsonResponse
     {
-        $user  = $request->user();
+        $user = $request->user();
         $items = Notifikasi::where('user_id', $user->id)
             ->latest()->take(20)->get()
             ->map(fn($n) => [
-                'id'         => $n->id,
-                'judul'      => $n->judul,
-                'pesan'      => $n->pesan,
-                'tipe'       => $n->tipe,
-                'is_read'    => $n->is_read,
+                'id' => $n->id,
+                'judul' => $n->judul,
+                'pesan' => $n->pesan,
+                'tipe' => $n->tipe,
+                'is_read' => $n->is_read,
                 'created_at' => $n->created_at->toIso8601String(),
             ]);
 
@@ -279,7 +321,7 @@ class NasabahController extends Controller
             ->where('is_read', false)->count();
 
         return response()->json([
-            'data'         => $items,
+            'data' => $items,
             'unread_count' => $unreadCount,
         ]);
     }

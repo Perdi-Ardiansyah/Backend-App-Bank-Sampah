@@ -15,8 +15,7 @@ return new class extends Migration
                   ->onDelete('cascade');
             $table->string('judul');
             $table->text('pesan');
-            $table->enum('tipe', ['setoran', 'penukaran', 'sistem', 'promo'])
-                  ->default('sistem');
+           $table->string('tipe', 50);
             $table->boolean('is_read')->default(false);
             $table->timestamps();
 

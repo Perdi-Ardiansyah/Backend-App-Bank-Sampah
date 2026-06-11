@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Penukaran;
+use App\Models\AuditLog;
 use App\Services\FcmService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+
 
 class PencairanAdminController extends Controller
 {
@@ -48,7 +50,23 @@ class PencairanAdminController extends Controller
         $pencairan = Penukaran::where('tipe', 'cash')->where('status', 'pending')->findOrFail($id);
         $pencairan->update(['status' => 'selesai']);
 
+        // ✅ Audit log ke tabel audit_log (pencairan selesai)
+        AuditLog::create([
+            'admin_id' => auth()->id(),
+            'aksi' => 'menyelesaikan pencairan',
+            'model' => 'Penukaran',
+            'model_id' => $pencairan->id,
+            'data_lama' => null,
+            'data_baru' => [
+                'status' => 'selesai',
+                'user_id' => $pencairan->user_id,
+                'jumlah' => (float) $pencairan->jumlah,
+            ],
+            'ip_address' => request()->ip(),
+        ]);
+
         $this->fcm->kirimKeUser(
+
             user: $pencairan->user,
             judul: 'Pencairan Dana Berhasil 💰',
             pesan: 'Pencairan Rp ' . number_format($pencairan->jumlah) . ' telah diproses dan dikirim.',
@@ -75,7 +93,23 @@ class PencairanAdminController extends Controller
         DB::transaction(function () use ($pencairan) {
             $pencairan->user->tambahPoin($pencairan->total_poin);
             $pencairan->update(['status' => 'dibatalkan']);
+
+            // ✅ Audit log ke tabel audit_log (pencairan ditolak)
+            AuditLog::create([
+                'admin_id' => auth()->id(),
+                'aksi' => 'menolak pencairan',
+                'model' => 'Penukaran',
+                'model_id' => $pencairan->id,
+                'data_lama' => null,
+                'data_baru' => [
+                    'status' => 'dibatalkan',
+                    'user_id' => $pencairan->user_id,
+                    'jumlah' => (float) $pencairan->jumlah,
+                ],
+                'ip_address' => request()->ip(),
+            ]);
         });
+
 
         $this->fcm->kirimKeUser(
             user: $pencairan->user,

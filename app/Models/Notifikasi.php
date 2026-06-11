@@ -15,7 +15,7 @@ class Notifikasi extends Model
         'user_id',
         'judul',
         'pesan',
-        'tipe',
+        'tipe',   // 👈 TAMBAHKAN BARIS INI
         'is_read',
     ];
 
@@ -30,16 +30,16 @@ class Notifikasi extends Model
 
     /** Kirim notifikasi ke satu user */
     public static function kirim(
-        int    $userId,
+        int $userId,
         string $judul,
         string $pesan,
         string $tipe = 'sistem'
     ): self {
         return static::create([
             'user_id' => $userId,
-            'judul'   => $judul,
-            'pesan'   => $pesan,
-            'tipe'    => $tipe,
+            'judul' => $judul,
+            'pesan' => $pesan,
+            'tipe' => $tipe,
         ]);
     }
 }

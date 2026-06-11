@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\AuditLog;
 use App\Services\FcmService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+
 
 class VerifikasiNasabahAdminController extends Controller
 {
@@ -36,7 +38,21 @@ class VerifikasiNasabahAdminController extends Controller
 
         $nasabah->update(['is_verified' => true]);
 
+        // ✅ Audit log ke tabel audit_log
+        AuditLog::create([
+            'admin_id' => $request->user()->id,
+            'aksi' => 'memverifikasi nasabah',
+            'model' => 'User',
+            'model_id' => $nasabah->id,
+            'data_lama' => null,
+            'data_baru' => [
+                'is_verified' => true,
+            ],
+            'ip_address' => $request->ip(),
+        ]);
+
         $this->fcm->kirimKeUser(
+
             user: $nasabah,
             judul: 'Akun Anda Telah Diverifikasi 🎉',
             pesan: 'Selamat! Akun Anda sudah aktif. Silakan mulai menyetorkan sampah.',

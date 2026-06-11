@@ -272,14 +272,6 @@ class NasabahController extends Controller
             route: '/riwayat',
         );
 
-        \App\Models\Notifikasi::create([
-            'user_id' => 1, // ID admin
-            'judul' => 'Pengajuan Pencairan Poin',
-            'pesan' => "Nasabah ingin mencairkan poin sebesar Rp " . number_format($request->nominal, 0, ',', '.'),
-            'tipe' => 'pencairan',
-            'is_read' => false
-        ]);
-
         $admins = User::where('role', 'admin')->get();
         $fcm = new FcmService();
 
@@ -307,7 +299,8 @@ class NasabahController extends Controller
     {
         $user = $request->user();
         $items = Notifikasi::where('user_id', $user->id)
-            ->latest()->take(20)->get()
+            ->orderByDesc('created_at')
+            ->take(20)->get()
             ->map(fn($n) => [
                 'id' => $n->id,
                 'judul' => $n->judul,
@@ -321,8 +314,13 @@ class NasabahController extends Controller
             ->where('is_read', false)->count();
 
         return response()->json([
+            // format asli (dipakai sebelumnya)
             'data' => $items,
             'unread_count' => $unreadCount,
+
+            // alias fallback (supaya UI tidak kosong jika parsing pakai key lain)
+            'notifikasi' => $items,
+            'unreadCount' => $unreadCount,
         ]);
     }
 

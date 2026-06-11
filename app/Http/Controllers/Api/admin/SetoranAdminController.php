@@ -7,10 +7,12 @@ use App\Models\KategoriSampah;
 use App\Models\Setoran;
 use App\Models\User;
 use App\Models\Notifikasi;
+use App\Models\AuditLog;
 use App\Services\FcmService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+
 
 class SetoranAdminController extends Controller
 {
@@ -36,7 +38,7 @@ class SetoranAdminController extends Controller
         $poin = $kategori->hitungPoin($request->berat_kg);
 
         DB::transaction(function () use ($request, $nasabah, $kategori, $poin) {
-            Setoran::create([
+            $setoran = Setoran::create([
                 'user_id' => $nasabah->id,
                 'kategori_id' => $kategori->id,
                 'admin_id' => $request->user()->id,
@@ -46,8 +48,27 @@ class SetoranAdminController extends Controller
                 'lokasi_tps' => $request->lokasi_tps,
                 'catatan' => $request->catatan,
             ]);
+
             $nasabah->tambahPoin($poin);
+
+            // ✅ Audit log ke tabel audit_log
+            AuditLog::create([
+                'admin_id' => $request->user()->id,
+                'aksi' => 'menginput setoran',
+                'model' => 'Setoran',
+                'model_id' => $setoran->id,
+                'data_lama' => null,
+                'data_baru' => [
+                    'user_id' => $nasabah->id,
+                    'kategori_id' => $kategori->id,
+                    'berat_kg' => (float) $request->berat_kg,
+                    'poin_didapat' => (int) $poin,
+                    'status' => 'selesai',
+                ],
+                'ip_address' => $request->ip(),
+            ]);
         });
+
 
         if ($nasabah->fcm_token) {
             FcmService::sendNotification(

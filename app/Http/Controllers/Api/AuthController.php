@@ -19,11 +19,12 @@ class AuthController extends Controller
 {
     // ── Login ──────────────────────────────────────────────────────────────
 
-    public function login(Request $request): JsonResponse
+   public function login(Request $request): JsonResponse
     {
         $request->validate([
             'username' => 'required|string',
             'password' => 'required|string',
+            'fcm_token' => 'nullable|string', // 👈 1. Tambahkan validasi fcm_token
         ]);
 
         // Cari user by username ATAU email
@@ -35,6 +36,13 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'Username atau password salah.',
             ], 401);
+        }
+
+        // 👈 2. Simpan fcm_token ke database jika dikirim dari Flutter
+        if ($request->filled('fcm_token')) {
+            $user->update([
+                'fcm_token' => $request->fcm_token
+            ]);
         }
 
         // Hapus token lama agar tidak menumpuk

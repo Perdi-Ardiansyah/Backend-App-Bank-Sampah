@@ -33,11 +33,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/update-fcm-token', [AuthController::class, 'updateFcmToken']);
     Route::post('/ubah-password', [AuthController::class, 'changePassword']); 
 
+    Route::get('/user/me', function (Illuminate\Http\Request $request) {
+        return response()->json(['data' => $request->user()]);
+    });
+
     // Kategori & Produk (bisa diakses nasabah dan admin)
     Route::get('/kategori', [KategoriController::class, 'index']);
     Route::get('/produk', [ProdukController::class, 'index']);
     Route::post('/user/update-foto', [AuthController::class, 'updateFoto']);
     Route::post('/user/update-profil', [AuthController::class, 'updateProfil']);
+
     // ── Nasabah routes ────────────────────────────────────────────────────
     Route::middleware('role:nasabah')->prefix('nasabah')->group(function () {
         Route::get('/dashboard', [NasabahController::class, 'dashboard']);

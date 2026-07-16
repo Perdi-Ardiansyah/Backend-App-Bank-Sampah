@@ -143,80 +143,77 @@ class NasabahController extends Controller
 
     // ── Tukar Produk ───────────────────────────────────────────────────────
 
-    public function tukarProduk(Request $request): JsonResponse
+    public function tukarProduk(Request $request)
     {
         $request->validate([
             'produk_id' => 'required|exists:produk,id',
             'jumlah' => 'required|integer|min:1',
         ]);
 
-        $user = $request->user();
-        $produk = Produk::findOrFail($request->produk_id);
-        $jumlah = $request->jumlah;
+        DB::beginTransaction();
+        try {
+            $user = $request->user();
+            $produk = Produk::findOrFail($request->produk_id);
+            $qty = $request->jumlah;
+            $totalHarga = $produk->biaya_poin * $qty;
 
-        if (!$produk->is_active || $produk->isHabis()) {
-            return response()->json(['message' => 'Produk tidak tersedia.'], 422);
-        }
-        if ($produk->stok < $jumlah) {
-            return response()->json([
-                'message' => "Stok tidak mencukupi. Tersedia: {$produk->stok}",
-            ], 422);
-        }
+            if ($user->total_poin < $totalHarga) {
+                return response()->json(['success' => false, 'message' => 'Saldo poin tidak cukup.'], 400);
+            }
 
-        $totalPoin = $produk->biaya_poin * $jumlah;
+            if ($produk->stok < $qty) {
+                return response()->json(['success' => false, 'message' => 'Stok produk tidak mencukupi.'], 400);
+            }
 
-        if ($user->total_poin < $totalPoin) {
-            return response()->json([
-                'message' => 'Saldo poin tidak mencukupi.',
-            ], 422);
-        }
+            // Booking Poin & Stok
+            $user->total_poin -= $totalHarga;
+            $user->save();
 
-        DB::transaction(function () use ($user, $produk, $jumlah, $totalPoin) {
-            $user->kurangiPoin($totalPoin);
-            $produk->kurangiStok($jumlah);
+            $produk->stok -= $qty;
+            $produk->save();
+
+            // Simpan Transaksi Pending
             Penukaran::create([
                 'user_id' => $user->id,
                 'produk_id' => $produk->id,
                 'tipe' => 'produk',
-                'jumlah' => $jumlah,
-                'total_poin' => $totalPoin,
-                'status' => 'selesai',
+                'jumlah' => $qty,
+                'total_poin' => $totalHarga,
+                'status' => 'pending',
+                'catatan' => $produk->nama . ' (' . $qty . ' pcs)'
             ]);
-        });
 
-        // ✅ Kirim push notification
-        $this->fcm->kirimKeUser(
-            user: $user,
-            judul: 'Penukaran Berhasil! 🎁',
-            pesan: "Penukaran {$jumlah}x {$produk->nama} berhasil. Poin berkurang {$totalPoin}.",
-            tipe: 'penukaran',
-            route: '/riwayat',
-        );
+            // 👇 TAMBAHKAN NOTIFIKASI DI SINI 👇
+            $judulNotif = 'Penukaran Diproses';
+            $pesanNotif = 'Permintaan penukaran ' . $produk->nama . ' sedang menunggu persetujuan admin.';
 
-        if ($produk->stok <= 5) {
-            $admins = User::where('role', 'admin')->get();
-            $fcm = new FcmService();
+            // 1. Simpan ke database
+            Notifikasi::create([
+                'user_id' => $user->id,
+                'judul' => $judulNotif,
+                'pesan' => $pesanNotif,
+                'tipe' => 'penukaran',
+                'is_read' => 0
+            ]);
 
-            $pesan = $produk->stok == 0
-                ? "Stok produk '{$produk->nama}' sudah HABIS TOTAL. Segera restock!"
-                : "Stok produk '{$produk->nama}' menipis (sisa {$produk->stok}).";
-
-            foreach ($admins as $admin) {
-                $fcm->kirimKeUser(
-                    $admin,
-                    'Peringatan Stok Produk 📦',
-                    $pesan,
-                    'stok_habis' // Tipe ini akan dibaca oleh Flutter Anda untuk memunculkan warna Merah
-                );
+            // 2. Kirim Push Notification FCM (Jika nasabah memiliki token aktif)
+            if (!empty($user->fcm_token)) {
+                // Pastikan class FcmService ini sesuai dengan lokasi helper/service FCM Anda
+                FcmService::sendNotification($user->fcm_token, $judulNotif, $pesanNotif);
             }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permintaan penukaran diajukan dan menunggu persetujuan admin.'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
         }
-
-        return response()->json([
-            'message' => 'Penukaran berhasil.',
-            'sisa_poin' => $user->fresh()->total_poin,
-        ]);
     }
-
     // ── Tukar Cash ─────────────────────────────────────────────────────────
 
     // ── Tukar Cash Versi Update ─────────────────────────────────────────────

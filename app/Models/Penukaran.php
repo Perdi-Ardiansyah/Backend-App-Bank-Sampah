@@ -25,14 +25,9 @@ class Penukaran extends Model
     ];
 
     protected $casts = [
-        'jumlah'     => 'integer',
+        'jumlah' => 'integer',
         'total_poin' => 'integer',
     ];
-
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
 
     public function produk()
     {
@@ -42,5 +37,10 @@ class Penukaran extends Model
     public function scopePending($query)
     {
         return $query->where('status', 'pending');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 }

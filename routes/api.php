@@ -10,12 +10,13 @@ use App\Http\Controllers\Api\admin\DashboardAdminController;
 use App\Http\Controllers\Api\admin\SetoranAdminController;
 use App\Http\Controllers\Api\admin\VerifikasiNasabahAdminController;
 use App\Http\Controllers\Api\admin\PencairanAdminController;
+// 👇 TAMBAHKAN IMPORT INI 👇
+use App\Http\Controllers\Api\admin\PenukaranAdminController;
 use App\Http\Controllers\Api\admin\LaporanAdminController;
 use App\Http\Controllers\Api\admin\LogAktivitasAdminController;
 use App\Http\Controllers\Api\admin\NotifikasiAdminController;
 use App\Services\FcmService;
 use App\Models\User;
-
 
 // ── Public routes (tidak perlu token) ────────────────────────────────────────
 
@@ -24,6 +25,7 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/kirim-otp', [AuthController::class, 'kirimOtp']);
 Route::post('/verifikasi-otp', [AuthController::class, 'verifikasiOtp']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+
 // ── Protected routes (wajib token Sanctum) ───────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -71,10 +73,16 @@ Route::middleware('auth:sanctum')->group(function () {
         // DAFTAR NASABAH AKTIF (Untuk Autocomplete Form Setoran)
         Route::get('/nasabah-aktif', [VerifikasiNasabahAdminController::class, 'nasabahAktif']);
 
-        // Pencairan
+        // Pencairan Dana
         Route::get('/pencairan', [PencairanAdminController::class, 'list']);
         Route::post('/pencairan/{id}/selesai', [PencairanAdminController::class, 'selesai']);
         Route::post('/pencairan/{id}/tolak', [PencairanAdminController::class, 'tolak']);
+
+        // 👇 TAMBAHKAN BLOK PENUKARAN INI 👇
+        // Penukaran Sembako / Produk
+        Route::get('/penukaran', [PenukaranAdminController::class, 'list']);
+        Route::post('/penukaran/{id}/selesai', [PenukaranAdminController::class, 'selesai']);
+        Route::post('/penukaran/{id}/tolak', [PenukaranAdminController::class, 'tolak']);
 
         // Kategori CRUD
         Route::post('/kategori', [KategoriController::class, 'store']);

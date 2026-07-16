@@ -353,4 +353,24 @@ class NasabahController extends Controller
 
         return response()->json(['message' => 'Semua notifikasi ditandai dibaca.']);
     }
+
+    public function bersihkanNotifikasi(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            // Menghapus semua notifikasi khusus milik nasabah yang sedang login
+            Notifikasi::where('user_id', $user->id)->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Semua riwayat notifikasi Anda berhasil dibersihkan.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membersihkan notifikasi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

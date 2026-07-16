@@ -33,7 +33,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::post('/update-fcm-token', [AuthController::class, 'updateFcmToken']);
-    Route::post('/ubah-password', [AuthController::class, 'changePassword']); 
+    Route::post('/ubah-password', [AuthController::class, 'changePassword']);
 
     Route::get('/user/me', function (Illuminate\Http\Request $request) {
         return response()->json(['data' => $request->user()]);
@@ -54,6 +54,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/tukar-cash', [NasabahController::class, 'tukarCash']);
         Route::get('/notifikasi', [NasabahController::class, 'notifikasi']);
         Route::post('/notifikasi/read-all', [NasabahController::class, 'markAllRead']);
+        Route::delete('/notifikasi/bersihkan', [NasabahController::class, 'bersihkanNotifikasi']); // 👈 TAMBAHKAN INI
     });
 
     Route::post('/user/simpan-token-fcm', [AuthController::class, 'simpanTokenFcm']);
@@ -102,5 +103,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/notifikasi', [NotifikasiAdminController::class, 'index']);
         Route::patch('/notifikasi/baca', [NotifikasiAdminController::class, 'tandaiDibaca']);
 
+        // Notifikasi Admin
+        Route::get('/notifikasi', [NotifikasiAdminController::class, 'index']);
+        Route::patch('/notifikasi/baca', [NotifikasiAdminController::class, 'tandaiDibaca']);
+        Route::delete('/notifikasi/bersihkan', [NotifikasiAdminController::class, 'bersihkan']); // 👈 TAMBAHKAN INI
     });
 });

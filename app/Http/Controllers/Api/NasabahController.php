@@ -51,7 +51,7 @@ class NasabahController extends Controller
         $transaksiTerakhir = $setoran->concat($penukaran)
             ->sortByDesc('waktu')->take(3)->values();
 
-        // 1. Tambahkan hitungan notifikasi yang belum dibaca
+        // 1. Hitung notifikasi yang belum dibaca
         $unreadCount = Notifikasi::where('user_id', $user->id)
             ->where('is_read', false)
             ->count();
@@ -59,15 +59,17 @@ class NasabahController extends Controller
         // 2. Konversi Poin ke Rupiah (Asumsi 1 Poin = Rp 1)
         $nilaiRupiah = 'Rp ' . number_format($user->total_poin, 0, ',', '.');
 
-        // 3. Masukkan ke dalam response JSON
+        // 3. Masukkan ke dalam response JSON (Ditambahkan properti level & total_setoran)
         return response()->json([
             'total_poin' => $user->total_poin,
             'nilai_rupiah' => $nilaiRupiah,
             'unread_notif_count' => $unreadCount,
             'transaksi_terakhir' => $transaksiTerakhir,
+            // 👇 DUA DATA BARU UNTUK LEVEL NASABAH 👇
+            'total_setoran' => $user->total_setoran, // Mengambil total berat sampah (kg) dari model User
+            'level' => $user->level,         // Mengambil status "Bronze/Silver/Gold" dari model User
         ]);
     }
-
     // ── Riwayat Setoran ────────────────────────────────────────────────────
 
     public function riwayatSetoran(Request $request): JsonResponse

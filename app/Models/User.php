@@ -33,16 +33,16 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password'          => 'hashed',
-        'is_verified'       => 'boolean',
-        'total_poin'        => 'integer',
+        'password' => 'hashed',
+        'is_verified' => 'boolean',
+        'total_poin' => 'integer',
     ];
 
     // ── Relationships ──────────────────────────────────────────────────────
 
     public function setoran()
     {
-        return $this->hasMany(Setoran::class);
+        return $this->hasMany(Setoran::class, 'user_id');
     }
 
     public function penukaran()
@@ -92,4 +92,26 @@ class User extends Authenticatable
 
         return $id;
     }
+
+    public function getTotalSetoranAttribute()
+    {
+        return (double) $this->setoran()->where('status', 'selesai')->sum('berat_kg');
+    }
+
+    // Properti otomatis untuk menentukan level nasabah
+    public function getLevelAttribute()
+    {
+        $totalWeight = $this->total_setoran;
+
+        if ($totalWeight >= 50) {
+            return 'Gold';
+        } elseif ($totalWeight >= 10) {
+            return 'Silver';
+        }
+
+        return 'Bronze';
+    }
+
+    // Pastikan properti dinamis ini ikut dikirim saat model diubah ke JSON/Array
+    protected $appends = ['total_setoran', 'level'];
 }

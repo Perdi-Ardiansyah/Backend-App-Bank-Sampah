@@ -39,17 +39,13 @@ class VerifikasiNasabahAdminController extends Controller
         $nasabah->update(['is_verified' => true]);
 
         // ✅ Audit log ke tabel audit_log
-        AuditLog::create([
-            'admin_id' => $request->user()->id,
-            'aksi' => 'memverifikasi nasabah',
-            'model' => 'User',
-            'model_id' => $nasabah->id,
-            'data_lama' => null,
-            'data_baru' => [
-                'is_verified' => true,
-            ],
-            'ip_address' => $request->ip(),
-        ]);
+       AuditLog::create([
+        'admin_id'   => auth()->user()->id,
+        'aksi'       => 'Memverifikasi dan mengaktifkan akun nasabah: ' . $nasabah->nama_lengkap,
+        'model'      => 'User',
+        'model_id'   => $nasabah->id,
+        'ip_address' => request()->ip(),
+    ]);
 
         $this->fcm->kirimKeUser(
 

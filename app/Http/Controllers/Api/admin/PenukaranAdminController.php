@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api\admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-
+use App\Models\AuditLog;
 // Import Model yang sesuai dengan tabel di database Anda
-use App\Models\Penukaran; 
+use App\Models\Penukaran;
 use App\Models\User;
 use App\Models\Produk;
 
@@ -22,7 +22,7 @@ class PenukaranAdminController extends Controller
         try {
             // Ambil data penukaran khusus tipe 'produk'
             // Pastikan Anda sudah membuat relasi public function user() di model Penukaran
-            $penukaran = Penukaran::with('user') 
+            $penukaran = Penukaran::with('user')
                 ->where('tipe', 'produk')
                 ->orderByRaw("FIELD(status, 'pending', 'selesai', 'dibatalkan')")
                 ->orderBy('created_at', 'desc')
@@ -31,7 +31,7 @@ class PenukaranAdminController extends Controller
             // Transformasi data agar sesuai dengan penamaan di Flutter (nasabah)
             $penukaran->transform(function ($item) {
                 // Menyalin relasi user menjadi nasabah agar Flutter mudah membacanya
-                $item->nasabah = $item->user; 
+                $item->nasabah = $item->user;
                 return $item;
             });
 
@@ -62,7 +62,13 @@ class PenukaranAdminController extends Controller
 
             $penukaran->status = 'selesai';
             $penukaran->save();
-
+            AuditLog::create([
+                'admin_id' => auth()->user()->id,
+                'aksi' => 'Menyetujui penukaran sembako milik nasabah ID: ' . $penukaran->user_id,
+                'model' => 'Penukaran',
+                'model_id' => $penukaran->id,
+                'ip_address' => request()->ip(),
+            ]);
             // 👇 KIRIM NOTIFIKASI KE NASABAH 👇
             $nasabah = User::find($penukaran->user_id);
             if ($nasabah) {
@@ -102,16 +108,16 @@ class PenukaranAdminController extends Controller
                 return response()->json(['success' => false, 'message' => 'Status transaksi ini sudah tidak dapat diubah.'], 400);
             }
 
-            $nasabah = User::find($penukaran->user_id); 
+            $nasabah = User::find($penukaran->user_id);
             if ($nasabah) {
-                $nasabah->total_poin += $penukaran->total_poin; 
+                $nasabah->total_poin += $penukaran->total_poin;
                 $nasabah->save();
             }
 
             if ($penukaran->produk_id) {
                 $produk = Produk::find($penukaran->produk_id);
                 if ($produk) {
-                    $produk->stok += $penukaran->jumlah; 
+                    $produk->stok += $penukaran->jumlah;
                     $produk->save();
                 }
             }

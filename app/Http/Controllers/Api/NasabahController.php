@@ -201,6 +201,30 @@ class NasabahController extends Controller
                 // Pastikan class FcmService ini sesuai dengan lokasi helper/service FCM Anda
                 FcmService::sendNotification($user->fcm_token, $judulNotif, $pesanNotif);
             }
+            $admins = User::where('role', 'admin')->get();
+            $fcm = new FcmService(); // Pastikan path ini benar
+
+            foreach ($admins as $admin) {
+                // 1. Simpan notifikasi ke database admin (opsional, jika ada tabel notifikasi admin)
+                Notifikasi::create([
+                    'user_id' => $admin->id,
+                    'judul' => 'Pengajuan Penukaran Barang 📦',
+                    'pesan' => "Nasabah {$user->nama_lengkap} mengajukan penukaran produk: {$produk->nama}. Segera tinjau!",
+                    'tipe' => 'penukaran',
+                    'is_read' => 0
+                ]);
+
+                // 2. Kirim Push Notification FCM ke admin
+                if (!empty($admin->fcm_token)) {
+                    $fcm->kirimKeUser(
+                        user: $admin,
+                        judul: 'Pengajuan Penukaran Barang 📦',
+                        pesan: "Nasabah {$user->nama_lengkap} mengajukan penukaran: {$produk->nama}. Segera tinjau!",
+                        tipe: 'penukaran',
+                        route: '/admin/penukaran' // Sesuaikan dengan route di Flutter Anda
+                    );
+                }
+            }
 
             DB::commit();
 

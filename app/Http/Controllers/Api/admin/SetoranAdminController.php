@@ -53,19 +53,11 @@ class SetoranAdminController extends Controller
 
             // ✅ Audit log ke tabel audit_log
             AuditLog::create([
-                'admin_id' => $request->user()->id,
-                'aksi' => 'menginput setoran',
+                'admin_id' => auth()->user()->id,
+                'aksi' => 'Mencatat setoran sampah seberat ' . $setoran->berat_kg . ' kg',
                 'model' => 'Setoran',
                 'model_id' => $setoran->id,
-                'data_lama' => null,
-                'data_baru' => [
-                    'user_id' => $nasabah->id,
-                    'kategori_id' => $kategori->id,
-                    'berat_kg' => (float) $request->berat_kg,
-                    'poin_didapat' => (int) $poin,
-                    'status' => 'selesai',
-                ],
-                'ip_address' => $request->ip(),
+                'ip_address' => request()->ip(),
             ]);
         });
 

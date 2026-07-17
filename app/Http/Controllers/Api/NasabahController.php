@@ -26,48 +26,66 @@ class NasabahController extends Controller
 
     // ── Dashboard ──────────────────────────────────────────────────────────
 
+    // ── Dashboard ──────────────────────────────────────────────────────────
+
+    // ── Dashboard ──────────────────────────────────────────────────────────
+
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
 
+        // 1. Ambil setoran terbaru (HANYA YANG STATUSNYA 'SELESAI')
         $setoran = Setoran::where('user_id', $user->id)
-            ->with('kategori')->latest()->take(3)->get()
+            ->where('status', 'selesai') // 👈 TAMBAHAN FILTER STATUS
+            ->with('kategori')
+            ->latest()
+            ->take(5)
+            ->get()
             ->map(fn($s) => [
                 'tipe' => 'setoran',
                 'judul' => $s->kategori->nama ?? '-',
                 'poin' => '+' . number_format($s->poin_didapat, 0, ',', '.'),
                 'waktu' => $s->created_at->diffForHumans(),
+                'tanggal_asli' => $s->created_at->toDateTimeString(),
             ]);
 
+        // 2. Ambil penukaran terbaru (HANYA YANG STATUSNYA 'SELESAI')
         $penukaran = Penukaran::where('user_id', $user->id)
-            ->with('produk')->latest()->take(3)->get()
+            ->where('status', 'selesai') // 👈 TAMBAHAN FILTER STATUS
+            ->with('produk')
+            ->latest()
+            ->take(5) 
+            ->get()
             ->map(fn($p) => [
                 'tipe' => 'penukaran',
                 'judul' => $p->produk->nama ?? 'Pencairan Dana',
                 'poin' => '-' . number_format($p->total_poin, 0, ',', '.'),
                 'waktu' => $p->created_at->diffForHumans(),
+                'tanggal_asli' => $p->created_at->toDateTimeString(),
             ]);
 
+        // 3. Gabungkan dan urutkan berdasarkan waktu aslinya
         $transaksiTerakhir = $setoran->concat($penukaran)
-            ->sortByDesc('waktu')->take(3)->values();
+            ->sortByDesc('tanggal_asli')
+            ->take(3)
+            ->values()
+            ->map(fn($item) => collect($item)->forget('tanggal_asli'));
 
-        // 1. Hitung notifikasi yang belum dibaca
+        // Hitung notifikasi yang belum dibaca
         $unreadCount = Notifikasi::where('user_id', $user->id)
             ->where('is_read', false)
             ->count();
 
-        // 2. Konversi Poin ke Rupiah (Asumsi 1 Poin = Rp 1)
+        // Konversi Poin ke Rupiah
         $nilaiRupiah = 'Rp ' . number_format($user->total_poin, 0, ',', '.');
 
-        // 3. Masukkan ke dalam response JSON (Ditambahkan properti level & total_setoran)
         return response()->json([
             'total_poin' => $user->total_poin,
             'nilai_rupiah' => $nilaiRupiah,
             'unread_notif_count' => $unreadCount,
             'transaksi_terakhir' => $transaksiTerakhir,
-            // 👇 DUA DATA BARU UNTUK LEVEL NASABAH 👇
-            'total_setoran' => $user->total_setoran, // Mengambil total berat sampah (kg) dari model User
-            'level' => $user->level,         // Mengambil status "Bronze/Silver/Gold" dari model User
+            'total_setoran' => $user->total_setoran, 
+            'level' => $user->level,         
         ]);
     }
     // ── Riwayat Setoran ────────────────────────────────────────────────────

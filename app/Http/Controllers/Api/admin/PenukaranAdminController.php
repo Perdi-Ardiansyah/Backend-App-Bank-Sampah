@@ -3,117 +3,82 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use App\Models\AuditLog;
-// Import Model yang sesuai dengan tabel di database Anda
 use App\Models\Penukaran;
-use App\Models\User;
+use App\Models\AuditLog;
 use App\Models\Produk;
+use App\Services\FcmService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class PenukaranAdminController extends Controller
 {
-    /**
-     * Mengambil daftar penukaran sembako
-     * Method: GET
-     */
-    public function list()
+    private FcmService $fcm;
+
+    public function __construct(FcmService $fcm)
     {
-        try {
-            // Ambil data penukaran khusus tipe 'produk'
-            // Pastikan Anda sudah membuat relasi public function user() di model Penukaran
-            $penukaran = Penukaran::with('user')
-                ->where('tipe', 'produk')
-                ->orderByRaw("FIELD(status, 'pending', 'selesai', 'dibatalkan')")
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-            // Transformasi data agar sesuai dengan penamaan di Flutter (nasabah)
-            $penukaran->transform(function ($item) {
-                // Menyalin relasi user menjadi nasabah agar Flutter mudah membacanya
-                $item->nasabah = $item->user;
-                return $item;
-            });
-
-            return response()->json([
-                'success' => true,
-                'data' => $penukaran
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan saat memuat data: ' . $e->getMessage()
-            ], 500);
-        }
+        $this->fcm = $fcm;
     }
 
-    /**
-     * Menyetujui dan menyelesaikan penukaran
-     * Method: POST
-     */
-    public function selesai($id)
+    public function list(): JsonResponse
     {
-        try {
-            $penukaran = Penukaran::findOrFail($id);
+        $penukaran = Penukaran::with('user')
+            ->where('tipe', 'produk')
+            ->orderByRaw("FIELD(status, 'pending', 'selesai', 'dibatalkan')")
+            ->latest()
+            ->get();
 
-            if ($penukaran->status !== 'pending') {
-                return response()->json(['success' => false, 'message' => 'Status transaksi ini sudah tidak dapat diubah.'], 400);
-            }
+        $penukaran->transform(function ($item) {
+            $item->nasabah = $item->user;
+            return $item;
+        });
 
-            $penukaran->status = 'selesai';
-            $penukaran->save();
-            AuditLog::create([
-                'admin_id' => auth()->user()->id,
-                'aksi' => 'Menyetujui penukaran sembako milik nasabah ID: ' . $penukaran->user_id,
-                'model' => 'Penukaran',
-                'model_id' => $penukaran->id,
-                'ip_address' => request()->ip(),
-            ]);
-            // 👇 KIRIM NOTIFIKASI KE NASABAH 👇
-            $nasabah = User::find($penukaran->user_id);
-            if ($nasabah) {
-                $judulNotif = 'Penukaran Disetujui! 🎉';
-                $pesanNotif = 'Hore! Permintaan penukaran sembako Anda telah disetujui admin dan siap diambil.';
-
-                \App\Models\Notifikasi::create([
-                    'user_id' => $nasabah->id,
-                    'judul' => $judulNotif,
-                    'pesan' => $pesanNotif,
-                    'tipe' => 'penukaran',
-                    'is_read' => 0
-                ]);
-
-                if (!empty($nasabah->fcm_token)) {
-                    \App\Services\FcmService::sendNotification($nasabah->fcm_token, $judulNotif, $pesanNotif);
-                }
-            }
-
-            return response()->json(['success' => true, 'message' => 'Penukaran sembako diselesaikan.']);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'data' => $penukaran
+        ]);
     }
 
-    /**
-     * Menolak penukaran (Otomatis refund poin nasabah & kembalikan stok produk)
-     * Method: POST
-     */
-    public function tolak($id)
+    public function selesai(int $id): JsonResponse
     {
-        DB::beginTransaction();
-        try {
-            $penukaran = Penukaran::findOrFail($id);
+        $penukaran = Penukaran::where('tipe', 'produk')->where('status', 'pending')->findOrFail($id);
+        $penukaran->update(['status' => 'selesai']);
 
-            if ($penukaran->status !== 'pending') {
-                return response()->json(['success' => false, 'message' => 'Status transaksi ini sudah tidak dapat diubah.'], 400);
-            }
+        // ✅ Audit log ke tabel audit_log (penukaran selesai)
+        AuditLog::create([
+            'admin_id' => auth()->id(),
+            'aksi' => 'menyelesaikan penukaran produk',
+            'model' => 'Penukaran',
+            'model_id' => $penukaran->id,
+            'data_lama' => null,
+            'data_baru' => [
+                'status' => 'selesai',
+                'user_id' => $penukaran->user_id,
+                'produk_id' => $penukaran->produk_id,
+                'jumlah' => (float) $penukaran->jumlah,
+            ],
+            'ip_address' => request()->ip(),
+        ]);
 
-            $nasabah = User::find($penukaran->user_id);
-            if ($nasabah) {
-                $nasabah->total_poin += $penukaran->total_poin;
-                $nasabah->save();
-            }
+        $this->fcm->kirimKeUser(
+            user: $penukaran->user,
+            judul: 'Penukaran Disetujui! 🎉',
+            pesan: 'Permintaan penukaran produk Anda telah disetujui admin dan siap diambil.',
+            tipe: 'penukaran',
+            route: '/riwayat',
+        );
 
+        return response()->json(['message' => 'Penukaran produk berhasil diselesaikan.']);
+    }
+
+    public function tolak(int $id): JsonResponse
+    {
+        $penukaran = Penukaran::where('tipe', 'produk')->where('status', 'pending')->findOrFail($id);
+
+        DB::transaction(function () use ($penukaran) {
+            // 1. Refund poin menggunakan method helper yang sama di pencairan
+            $penukaran->user->tambahPoin($penukaran->total_poin);
+            
+            // 2. Kembalikan stok produk
             if ($penukaran->produk_id) {
                 $produk = Produk::find($penukaran->produk_id);
                 if ($produk) {
@@ -122,32 +87,33 @@ class PenukaranAdminController extends Controller
                 }
             }
 
-            $penukaran->status = 'dibatalkan';
-            $penukaran->save();
+            $penukaran->update(['status' => 'dibatalkan']);
 
-            // 👇 KIRIM NOTIFIKASI KE NASABAH 👇
-            if ($nasabah) {
-                $judulNotif = 'Penukaran Dibatalkan ❌';
-                $pesanNotif = 'Maaf, permintaan penukaran sembako Anda dibatalkan admin. Saldo poin (' . $penukaran->total_poin . ' Pts) telah dikembalikan.';
+            // ✅ Audit log ke tabel audit_log (penukaran ditolak)
+            AuditLog::create([
+                'admin_id' => auth()->id(),
+                'aksi' => 'menolak penukaran produk',
+                'model' => 'Penukaran',
+                'model_id' => $penukaran->id,
+                'data_lama' => null,
+                'data_baru' => [
+                    'status' => 'dibatalkan',
+                    'user_id' => $penukaran->user_id,
+                    'produk_id' => $penukaran->produk_id,
+                    'jumlah' => (float) $penukaran->jumlah,
+                ],
+                'ip_address' => request()->ip(),
+            ]);
+        });
 
-                \App\Models\Notifikasi::create([
-                    'user_id' => $nasabah->id,
-                    'judul' => $judulNotif,
-                    'pesan' => $pesanNotif,
-                    'tipe' => 'penukaran',
-                    'is_read' => 0
-                ]);
+        $this->fcm->kirimKeUser(
+            user: $penukaran->user,
+            judul: 'Penukaran Dibatalkan ❌',
+            pesan: 'Permintaan penukaran produk dibatalkan. Poin (' . $penukaran->total_poin . ' Pts) telah dikembalikan.',
+            tipe: 'penukaran',
+            route: '/riwayat',
+        );
 
-                if (!empty($nasabah->fcm_token)) {
-                    \App\Services\FcmService::sendNotification($nasabah->fcm_token, $judulNotif, $pesanNotif);
-                }
-            }
-
-            DB::commit();
-            return response()->json(['success' => true, 'message' => 'Penukaran dibatalkan. Poin dan stok dikembalikan.']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
-        }
+        return response()->json(['message' => 'Penukaran ditolak. Poin dan stok dikembalikan.']);
     }
 }

@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
 
+
 class PencairanAdminController extends Controller
 {
     private FcmService $fcm;
@@ -74,15 +75,6 @@ class PencairanAdminController extends Controller
             route: '/riwayat',
         );
 
-        if ($pencairan->user->fcm_token) {
-            \App\Services\FcmService::sendNotification(
-                $pencairan->user->fcm_token,
-                'Pencairan Dana Berhasil 💰',
-                'Pencairan Rp ' . number_format($pencairan->jumlah) . ' telah diproses dan dikirim.',
-                ['jenis' => 'penukaran', 'route' => '/riwayat']
-            );
-        }
-
         return response()->json(['message' => 'Pencairan berhasil diselesaikan.']);
     }
 
@@ -118,15 +110,6 @@ class PencairanAdminController extends Controller
             tipe: 'penukaran',
             route: '/riwayat',
         );
-
-        if ($pencairan->user->fcm_token) {
-            \App\Services\FcmService::sendNotification(
-                $pencairan->user->fcm_token,
-                'Pencairan Dana Ditolak',
-                'Permintaan pencairan Rp ' . number_format($pencairan->jumlah) . ' ditolak. Poin telah dikembalikan.',
-                ['jenis' => 'penukaran', 'route' => '/riwayat']
-            );
-        }
 
         return response()->json(['message' => 'Pencairan ditolak dan poin dikembalikan.']);
     }

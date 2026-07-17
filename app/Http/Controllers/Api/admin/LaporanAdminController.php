@@ -8,10 +8,8 @@ use App\Models\Penukaran;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Carbon\Carbon;
-use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
-// Pastikan Anda sudah membuat class export ini. Jika belum, lihat catatan di bawah.
-use App\Exports\LaporanExport; 
+use Illuminate\Support\Facades\Response;
 
 class LaporanAdminController extends Controller
 {
@@ -62,7 +60,7 @@ class LaporanAdminController extends Controller
             ->map(fn($c) => [
                 'nasabah' => $c->user->nama_lengkap ?? '-',
                 'nominal' => 'Rp ' . number_format($c->total_poin, 0, ',', '.'),
-                'metode' => $c->catatan ?? 'Cash', 
+                'metode' => $c->catatan ?? 'Cash',
                 'tanggal' => $c->created_at->format('d M Y'),
             ]);
 
@@ -82,18 +80,83 @@ class LaporanAdminController extends Controller
         ]);
     }
 
-    // ── FUNGSI EKSPOR EXCEL ──
+    // â”€â”€ FUNGSI EKSPOR EXCEL (NATIVE CSV) â”€â”€
     public function exportExcel(Request $request)
     {
         $tipe = $request->query('tipe', 'setoran');
         $dari = $request->query('dari', Carbon::now()->startOfMonth()->toDateString());
         $sampai = $request->query('sampai', Carbon::now()->toDateString());
 
-        // Mengirimkan parameter tipe dan tanggal ke dalam class LaporanExport
-        return Excel::download(new LaporanExport($tipe, $dari, $sampai), "laporan_{$tipe}_{$dari}_sd_{$sampai}.xlsx");
+        $start = Carbon::parse($dari)->startOfDay();
+        $end = Carbon::parse($sampai)->endOfDay();
+
+        $filename = "laporan_{$tipe}_{$dari}_sd_{$sampai}.csv";
+
+        $headers = [
+            "Content-Type" => "text/csv; charset=UTF-8",
+            "Content-Disposition" => "attachment; filename=\"$filename\"",
+        ];
+
+        $callback = function () use ($tipe, $start, $end) {
+            $file = fopen('php://output', 'w');
+
+            // ðŸ‘‡ INI LANGKAH SATU: Tambahkan BOM agar format file tidak rusak di MS Excel
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            // Logika disesuaikan dengan tab yang sedang aktif di Flutter
+            if ($tipe === 'setoran') {
+                $data = Setoran::with('kategori', 'user')->where('status', 'selesai')->whereBetween('created_at', [$start, $end])->latest()->get();
+                
+                // Menggunakan titik koma (;) sebagai delimiter
+                fputcsv($file, ['Tanggal', 'Nasabah', 'Kategori', 'Berat (Kg)', 'Poin Didapat'], ';');
+                
+                foreach ($data as $row) {
+                    fputcsv($file, [
+                        $row->created_at->format('d M Y'),
+                        $row->user->nama_lengkap ?? '-',
+                        $row->kategori->nama ?? '-',
+                        $row->berat_kg,
+                        $row->poin_didapat
+                    ], ';');
+                }
+            } 
+            elseif ($tipe === 'produk') {
+                $data = Penukaran::with('produk', 'user')->where('tipe', 'produk')->where('status', 'selesai')->whereBetween('created_at', [$start, $end])->latest()->get();
+                
+                fputcsv($file, ['Tanggal', 'Nasabah', 'Produk', 'Jumlah', 'Total Poin Keluar'], ';');
+                
+                foreach ($data as $row) {
+                    fputcsv($file, [
+                        $row->created_at->format('d M Y'),
+                        $row->user->nama_lengkap ?? '-',
+                        $row->produk->nama ?? '-',
+                        $row->jumlah,
+                        $row->total_poin
+                    ], ';');
+                }
+            } 
+            elseif ($tipe === 'cash') {
+                $data = Penukaran::with('user')->where('tipe', 'cash')->where('status', 'selesai')->whereBetween('created_at', [$start, $end])->latest()->get();
+                
+                fputcsv($file, ['Tanggal', 'Nasabah', 'Nominal', 'Metode / Catatan'], ';');
+                
+                foreach ($data as $row) {
+                    fputcsv($file, [
+                        $row->created_at->format('d M Y'),
+                        $row->user->nama_lengkap ?? '-',
+                        $row->total_poin, // atau $row->jumlah tergantung database Anda
+                        $row->catatan ?? '-'
+                    ], ';');
+                }
+            }
+
+            fclose($file);
+        };
+
+        return Response::stream($callback, 200, $headers);
     }
 
-    // ── FUNGSI EKSPOR PDF ──
+    // â”€â”€ FUNGSI EKSPOR PDF â”€â”€
     public function exportPdf(Request $request)
     {
         $tipe = $request->query('tipe', 'setoran');
@@ -120,7 +183,7 @@ class LaporanAdminController extends Controller
 
         // Tembak data ke file view resources/views/admin/laporan/pdf.blade.php
         $pdf = Pdf::loadView('admin.laporan.pdf', compact('data', 'judul', 'tipe', 'dari', 'sampai'));
-        
+
         return $pdf->download("laporan_{$tipe}_{$dari}_sd_{$sampai}.pdf");
     }
 }

@@ -6,21 +6,21 @@ use App\Http\Controllers\Api\NasabahController;
 use App\Http\Controllers\Api\KategoriController;
 use App\Http\Controllers\Api\ProdukController;
 use App\Http\Controllers\Api\AdminController;
-use App\Http\Controllers\Api\admin\DashboardAdminController;
-use App\Http\Controllers\Api\admin\SetoranAdminController;
-use App\Http\Controllers\Api\admin\VerifikasiNasabahAdminController;
-use App\Http\Controllers\Api\admin\PencairanAdminController;
+use App\Http\Controllers\Api\Admin\DashboardAdminController;
+use App\Http\Controllers\Api\Admin\SetoranAdminController;
+use App\Http\Controllers\Api\Admin\VerifikasiNasabahAdminController;
+use App\Http\Controllers\Api\Admin\PencairanAdminController;
 // 👇 TAMBAHKAN IMPORT INI 👇
-use App\Http\Controllers\Api\admin\PenukaranAdminController;
-use App\Http\Controllers\Api\admin\LaporanAdminController;
-use App\Http\Controllers\Api\admin\LogAktivitasAdminController;
-use App\Http\Controllers\Api\admin\NotifikasiAdminController;
+use App\Http\Controllers\Api\Admin\PenukaranAdminController;
+use App\Http\Controllers\Api\Admin\LaporanAdminController;
+use App\Http\Controllers\Api\Admin\LogAktivitasAdminController;
+use App\Http\Controllers\Api\Admin\NotifikasiAdminController;
 use App\Services\FcmService;
 use App\Models\User;
 
 // ── Public routes (tidak perlu token) ────────────────────────────────────────
 
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/kirim-otp', [AuthController::class, 'kirimOtp']);
 Route::post('/verifikasi-otp', [AuthController::class, 'verifikasiOtp']);
@@ -98,6 +98,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Laporan
         Route::get('/laporan', [LaporanAdminController::class, 'index']);
         Route::get('/log-aktivitas', [LogAktivitasAdminController::class, 'index']);
+        Route::get('/laporan/excel', [LaporanAdminController::class, 'exportExcel']);
+        Route::get('/laporan/pdf', [LaporanAdminController::class, 'exportPdf']);
 
         // Notifikasi
         Route::get('/notifikasi', [NotifikasiAdminController::class, 'index']);

@@ -61,7 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Admin routes ──────────────────────────────────────────────────────
     Route::middleware('role:admin')->prefix('admin')->group(function () {
-        Route::get('/dashboard', [AdminController::class, 'dashboard']);
+        Route::get('/dashboard', DashboardAdminController::class);
 
         // Setoran
         Route::post('/setoran', [SetoranAdminController::class, 'simpan']);

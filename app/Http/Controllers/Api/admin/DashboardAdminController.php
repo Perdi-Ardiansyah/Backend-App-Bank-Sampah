@@ -27,6 +27,51 @@ class DashboardAdminController extends Controller
             ];
         }
 
+        // ── DATA DETAIL UNTUK TABEL FLUTTER ──
+        
+        // 1. Data 50 Nasabah Aktif Terbaru
+        // 1. Data 50 Nasabah Aktif Terbaru
+        $detail_nasabah = User::where('role', 'nasabah')
+            ->where('is_verified', true)
+            ->latest()
+            ->take(50)
+            ->get()
+            ->map(function($user, $index) {
+                return [
+                    (string) ($index + 1),
+                    $user->nama_lengkap ?? $user->name ?? '-',
+                    $user->username ?? $user->id_nasabah ?? '-',
+                    'Aktif'
+                ];
+            })->values()->toArray(); // 👈 Tambahkan ini di ujung
+
+        // 2. Data Top 50 Nasabah dengan Poin Terbanyak
+        $detail_poin = User::where('role', 'nasabah')
+            ->where('total_poin', '>', 0)
+            ->orderByDesc('total_poin')
+            ->take(50)
+            ->get()
+            ->map(function($user, $index) {
+                return [
+                    (string) ($index + 1),
+                    $user->nama_lengkap ?? $user->name ?? '-',
+                    number_format($user->total_poin, 0, ',', '.')
+                ];
+            })->values()->toArray(); // 👈 Tambahkan ini di ujung
+
+        // 3. Data Total Sampah Berdasarkan Kategori
+        $detail_sampah = Setoran::with('kategori')
+            ->where('status', 'selesai')
+            ->get()
+            ->groupBy('kategori_id')
+            ->map(function($group) {
+                $kategori_nama = $group->first()->kategori->nama_kategori ?? $group->first()->kategori->nama ?? 'Lainnya';
+                return [
+                    $kategori_nama,
+                    $group->sum('berat_kg') . ' Kg'
+                ];
+            })->values()->toArray(); // 👈 Tambahkan ini di ujung
+
         return response()->json([
             'total_nasabah' => User::where('role', 'nasabah')->where('is_verified', true)->count(),
             'nasabah_hari_ini' => User::where('role', 'nasabah')->whereDate('created_at', today())->count(),
@@ -39,7 +84,10 @@ class DashboardAdminController extends Controller
                 'poin_diberikan' => Setoran::whereDate('created_at', today())->where('status', 'selesai')->sum('poin_didapat'),
             ],
             'grafik_mingguan' => $grafik_mingguan,
+            // 👇 Data tabel ditambahkan di sini 👇
+            'detail_nasabah' => $detail_nasabah,
+            'detail_poin' => $detail_poin,
+            'detail_sampah' => $detail_sampah,
         ]);
     }
 }
-
